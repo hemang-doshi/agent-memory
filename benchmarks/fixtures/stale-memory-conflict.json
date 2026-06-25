@@ -1,0 +1,19 @@
+{
+  "task": "Run tests in the project",
+  "expectedPackIncludes": [
+    "Prefer pnpm commands for this project."
+  ],
+  "memories": [
+    {
+      "content": "Use npm for this project.",
+      "type": "workflow_rule",
+      "source": "user_explicit",
+      "status": "stale"
+    },
+    {
+      "content": "Prefer pnpm commands for this project.",
+      "type": "workflow_rule",
+      "source": "cli"
+    }
+  ]
+}

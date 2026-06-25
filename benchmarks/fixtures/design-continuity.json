@@ -1,0 +1,13 @@
+{
+  "task": "Build A04 scene",
+  "expectedPackIncludes": [
+    "Use reusable component library for reel scenes."
+  ],
+  "memories": [
+    {
+      "content": "Use reusable component library for reel scenes.",
+      "type": "decision",
+      "source": "user_explicit"
+    }
+  ]
+}

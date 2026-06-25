@@ -1,0 +1,34 @@
+{
+  "name": "agent-memory-preflight",
+  "version": "0.1.0",
+  "description": "Local-first project memory and preflight CLI for coding agents.",
+  "type": "module",
+  "bin": {
+    "agentmem": "./dist/cli/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "node --import tsx ./src/cli/main.ts"
+  },
+  "keywords": [
+    "cli",
+    "memory",
+    "mcp",
+    "sqlite",
+    "agents"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.3.0",
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

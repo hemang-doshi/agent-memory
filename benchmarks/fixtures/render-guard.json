@@ -1,0 +1,21 @@
+{
+  "task": "Implement visual change in the reel scene",
+  "command": "npm run render",
+  "expectedDecision": "warn",
+  "expectedPackIncludes": [
+    "Do not run full renders unless explicitly requested."
+  ],
+  "memories": [
+    {
+      "content": "Do not run full renders unless explicitly requested.",
+      "type": "command_policy",
+      "source": "user_explicit",
+      "metadata": {
+        "decision": "warn",
+        "commandPattern": "npm run render",
+        "matchType": "exact",
+        "suggestedAction": "Run pnpm test instead."
+      }
+    }
+  ]
+}

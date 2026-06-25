@@ -1,0 +1,13 @@
+{
+  "task": "Add component browser entries for PanelCard and SystemWindow",
+  "expectedPackIncludes": [
+    "Using defineEntry for JSX-child demos failed due to TS limitations."
+  ],
+  "memories": [
+    {
+      "content": "Using defineEntry for JSX-child demos failed due to TS limitations.",
+      "type": "failed_attempt",
+      "source": "cli"
+    }
+  ]
+}
