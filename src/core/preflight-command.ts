@@ -3,6 +3,7 @@ import type { MemoryRecord } from "../domain/types.js";
 import { parseCommandPolicyMatchType, parsePreflightDecision } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
+import { requireSession, writeProtocolReceipt } from "./protocol-receipts.js";
 
 function commandMatches(command: string, metadata: JsonRecord): boolean {
   const pattern = typeof metadata.commandPattern === "string" ? metadata.commandPattern : "";
@@ -80,21 +81,41 @@ function comparePolicies(left: MemoryRecord, right: MemoryRecord): number {
 
 export async function preflightCommand({
   cwd,
-  command
+  command,
+  sessionId
 }: {
   cwd: string;
   command: string;
+  sessionId?: string;
 }): Promise<PreflightResult> {
   const loaded = await loadProject(cwd);
 
   try {
+    if (sessionId) {
+      requireSession(loaded, sessionId);
+    }
+
     if (!loaded.context.config.preflight.enabled) {
-      return {
+      const result = {
         decision: "allow",
         reason: "Preflight disabled in project config.",
         message: "No command policy checks were run.",
         matchedMemoryIds: []
-      };
+      } satisfies PreflightResult;
+
+      if (sessionId) {
+        writeProtocolReceipt(loaded, {
+          sessionId,
+          receiptType: "preflight_checked",
+          payload: {
+            command,
+            decision: result.decision,
+            matchedMemoryIds: result.matchedMemoryIds
+          }
+        });
+      }
+
+      return result;
     }
 
     const memories = loaded.repo.listMemories(loaded.project.projectId);
@@ -132,13 +153,43 @@ export async function preflightCommand({
       }
     });
 
-    return {
+    const result: PreflightResult = {
       decision,
       reason,
       message,
       matchedMemoryIds: matched.map((memory) => memory.id),
       suggestedAction
     };
+
+    if (sessionId) {
+      const payload = {
+        command,
+        decision,
+        matchedMemoryIds: result.matchedMemoryIds,
+        suggestedAction
+      };
+      writeProtocolReceipt(loaded, {
+        sessionId,
+        receiptType: "preflight_checked",
+        payload
+      });
+      if (decision === "warn") {
+        writeProtocolReceipt(loaded, {
+          sessionId,
+          receiptType: "warning_triggered",
+          payload
+        });
+      }
+      if (decision === "block") {
+        writeProtocolReceipt(loaded, {
+          sessionId,
+          receiptType: "block_triggered",
+          payload
+        });
+      }
+    }
+
+    return result;
   } finally {
     loaded.close();
   }

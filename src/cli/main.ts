@@ -2,16 +2,26 @@
 import process from "node:process";
 
 import { createMemory } from "../core/create-memory.js";
+import { doctor } from "../core/doctor.js";
 import { explainMemory } from "../core/explain-memory.js";
 import { generatePack } from "../core/generate-pack.js";
 import { initProject } from "../core/init-project.js";
+import { installInstructions } from "../core/install-instructions.js";
+import { listCandidates } from "../core/candidate-list.js";
 import { listMemories } from "../core/list-memories.js";
 import { markMemoryStale } from "../core/mark-memory-stale.js";
 import { preflightCommand } from "../core/preflight-command.js";
 import { searchMemories } from "../core/search-memories.js";
+import { finishSession } from "../core/session-finish.js";
+import { formatSessionReceiptText, getSessionReceipt } from "../core/session-receipt.js";
+import { startSession } from "../core/session-start.js";
+import { proposeCandidate } from "../core/candidate-propose.js";
+import { uninstallInstructions } from "../core/uninstall-instructions.js";
 import { formatTextList, formatTextPreflight } from "../formatters/output.js";
 import type { CreateMemoryInput, MemoryRecord } from "../domain/types.js";
 import {
+  parseCandidateStatus,
+  parseCandidateType,
   parseCommandPolicyMatchType,
   parseMemorySource,
   parseMemoryType,
@@ -73,12 +83,20 @@ function helpText(): string {
     "",
     "Usage:",
     "  agentmem init [--git-init] [--json]",
+    "  agentmem install-instructions",
+    "  agentmem uninstall-instructions",
+    "  agentmem doctor [--json]",
+    "  agentmem session start \"<task>\" [--json]",
+    "  agentmem session finish --session <session-id> --summary \"...\" [--json]",
+    "  agentmem session receipt --session <session-id> [--json]",
     "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]",
     "  agentmem decision <content>",
     "  agentmem failed <content>",
     "  agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block]",
-    "  agentmem pack <task> [--json]",
-    "  agentmem preflight --command <command> [--json]",
+    "  agentmem pack <task> [--session <session-id>] [--json]",
+    "  agentmem preflight --command <command> [--session <session-id>] [--json]",
+    "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" --evidence \"...\" [--json]",
+    "  agentmem candidate list [--status proposed] [--json]",
     "  agentmem search <query> [--type <type>] [--json]",
     "  agentmem list [--type <type>] [--all] [--json]",
     "  agentmem stale <memory-id> --reason <reason>",
@@ -189,13 +207,108 @@ async function main(): Promise<void> {
     case "policy":
       await handleRemember(command, parsed, cwd);
       return;
+    case "install-instructions": {
+      const result = await installInstructions({ cwd });
+      render(asJson ? result : `Installed Agent Memory router in ${result.agentsPath}.`, asJson);
+      return;
+    }
+    case "uninstall-instructions": {
+      const result = await uninstallInstructions({ cwd });
+      render(asJson ? result : `Removed Agent Memory router from ${result.agentsPath}.`, asJson);
+      return;
+    }
+    case "doctor": {
+      const result = await doctor({ cwd });
+      render(
+        asJson
+          ? result
+          : [
+              `initialized: ${result.initialized}`,
+              `agentsMdExists: ${result.agentsMdExists}`,
+              `routerInstalled: ${result.routerInstalled}`,
+              `storePath: ${result.storePath}`,
+              `configPath: ${result.configPath}`
+            ].join("\n"),
+        asJson
+      );
+      return;
+    }
+    case "session": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "start") {
+        const task = parsed.positionals.slice(1).join(" ").trim();
+        const result = await startSession({ cwd, task });
+        render(asJson ? result : `Started ${result.sessionId}.`, asJson);
+        return;
+      }
+
+      if (subcommand === "finish") {
+        const result = await finishSession({
+          cwd,
+          sessionId: requireOption(parsed, "session"),
+          summary: requireOption(parsed, "summary")
+        });
+        render(asJson ? result : `Finished ${result.sessionId}.`, asJson);
+        return;
+      }
+
+      if (subcommand === "receipt") {
+        const result = await getSessionReceipt({
+          cwd,
+          sessionId: requireOption(parsed, "session")
+        });
+        render(asJson ? result : formatSessionReceiptText(result), asJson);
+        return;
+      }
+
+      throw new Error("Unknown session command. Run `agentmem help` for usage.");
+    }
+    case "candidate": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "propose") {
+        const result = await proposeCandidate({
+          cwd,
+          sessionId: requireOption(parsed, "session"),
+          type: parseCandidateType(requireOption(parsed, "type")),
+          content: requireOption(parsed, "content"),
+          evidence: requireOption(parsed, "evidence")
+        });
+        render(asJson ? result : `Proposed ${result.candidateId}.`, asJson);
+        return;
+      }
+
+      if (subcommand === "list") {
+        const result = await listCandidates({
+          cwd,
+          status:
+            parsed.options.status === undefined
+              ? undefined
+              : parseCandidateStatus(parsed.options.status)
+        });
+        render(
+          asJson
+            ? result
+            : result
+                .map((candidate) => `${candidate.candidateId} ${candidate.type} ${candidate.candidateStatus}`)
+                .join("\n"),
+          asJson
+        );
+        return;
+      }
+
+      throw new Error("Unknown candidate command. Run `agentmem help` for usage.");
+    }
     case "pack": {
       const task = parsed.positionals.join(" ").trim();
       if (!task) {
         throw new Error("pack requires a task description");
       }
 
-      const result = await generatePack({ cwd, task });
+      const result = await generatePack({
+        cwd,
+        task,
+        sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
+      });
       render(asJson ? result : result.markdown, asJson);
       return;
     }
@@ -216,7 +329,11 @@ async function main(): Promise<void> {
     }
     case "preflight": {
       const commandValue = requireOption(parsed, "command");
-      const result = await preflightCommand({ cwd, command: commandValue });
+      const result = await preflightCommand({
+        cwd,
+        command: commandValue,
+        sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
+      });
       render(asJson ? result : formatTextPreflight(result), asJson);
       return;
     }

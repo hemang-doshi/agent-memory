@@ -1,11 +1,15 @@
 import {
   CONFIDENCE_LEVELS,
+  CANDIDATE_STATUSES,
+  CANDIDATE_TYPES,
   MEMORY_SCOPES,
   MEMORY_SOURCES,
   MEMORY_STATUSES,
   MEMORY_TYPES,
   PREFLIGHT_DECISIONS,
   SEVERITY_LEVELS,
+  type CandidateType,
+  type CandidateStatus,
   type ConfidenceLevel,
   type MemoryScope,
   type MemorySource,
@@ -54,6 +58,14 @@ export function parsePreflightDecision(value: unknown): PreflightDecision {
   return parseEnum(value, PREFLIGHT_DECISIONS, "preflight decision");
 }
 
+export function parseCandidateType(value: unknown): CandidateType {
+  return parseEnum(value, CANDIDATE_TYPES, "candidate type");
+}
+
+export function parseCandidateStatus(value: unknown): CandidateStatus {
+  return parseEnum(value, CANDIDATE_STATUSES, "candidate status");
+}
+
 export function parseCommandPolicyMatchType(value: unknown): CommandPolicyMatchType {
   return parseEnum(value, COMMAND_POLICY_MATCH_TYPES, "command policy match type");
 }
@@ -64,5 +76,20 @@ export function validateRegexPattern(pattern: string): void {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Invalid regex pattern: ${message}`);
+  }
+}
+
+export function assertNoObviousSecret(value: string): void {
+  const patterns = [
+    /\bapi_key\s*=/i,
+    /\bsecret\s*=/i,
+    /\bpassword\s*=/i,
+    /\btoken\s*=/i,
+    /\bBearer\s+ey[A-Za-z0-9_-]+/i,
+    /\bsk-[A-Za-z0-9_-]+/
+  ];
+
+  if (patterns.some((pattern) => pattern.test(value))) {
+    throw new Error("Candidate rejected by hygiene check: possible secret detected.");
   }
 }

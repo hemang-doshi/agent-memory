@@ -51,6 +51,44 @@ CREATE TABLE IF NOT EXISTS schema_meta (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  summary TEXT
+);
+
+CREATE TABLE IF NOT EXISTS protocol_receipts (
+  receipt_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  session_id TEXT,
+  receipt_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memory_candidates (
+  candidate_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  session_id TEXT,
+  type TEXT NOT NULL,
+  content TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  source TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  evidence TEXT NOT NULL,
+  candidate_status TEXT NOT NULL,
+  proposed_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  reviewed_at TEXT,
+  review_reason TEXT,
+  target_memory_id TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_memories_project_created
 ON memories(project_id, created_at DESC);
 
@@ -59,4 +97,19 @@ ON events(project_id, timestamp DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_git_root
 ON projects(git_root);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_project_started
+ON sessions(project_id, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_protocol_receipts_session_created
+ON protocol_receipts(session_id, created_at ASC);
+
+CREATE INDEX IF NOT EXISTS idx_protocol_receipts_project_created
+ON protocol_receipts(project_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_memory_candidates_project_created
+ON memory_candidates(project_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_memory_candidates_status
+ON memory_candidates(candidate_status);
 `;
