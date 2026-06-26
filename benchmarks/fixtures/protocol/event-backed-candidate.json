@@ -1,0 +1,31 @@
+{
+  "schema": "agent-memory-benchmark/v1",
+  "name": "event-backed-candidate",
+  "task": "Fix component browser typecheck",
+  "memories": [],
+  "events": [
+    {
+      "type": "command_result",
+      "command": "pnpm typecheck",
+      "exitCode": 1,
+      "summary": "Typecheck failed when JSX children were stored in defineEntry props."
+    }
+  ],
+  "preflightCommands": [],
+  "candidates": [
+    {
+      "type": "failed_attempt",
+      "content": "Using defineEntry for JSX-child demos fails with JSX children.",
+      "evidenceEventIndex": 0
+    }
+  ],
+  "expectations": {
+    "candidateCount": 1,
+    "receiptTypes": [
+      "session_started",
+      "event_recorded",
+      "candidate_proposed",
+      "session_finished"
+    ]
+  }
+}

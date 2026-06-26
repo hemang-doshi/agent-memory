@@ -96,6 +96,20 @@ agentmem candidate propose \
 Candidates can still use `--evidence "..."`, but `--evidence-event`
 preserves stronger provenance.
 
+## Protocol Benchmarks
+
+Protocol benchmarks run deterministic local fixtures that check memory pack
+recall, preflight behavior, candidate proposal, evidence receipts, and protocol
+receipts.
+
+```bash
+agentmem benchmark run --fixture benchmarks/fixtures/protocol/old-mistake-avoidance.json
+agentmem benchmark run --all --json
+```
+
+Benchmarks run in isolated temporary workspaces and do not mutate the current
+project's `.agent-memory` database.
+
 ## Commands
 
 - `agentmem init [--git-init] [--json]`
@@ -119,6 +133,8 @@ preserves stronger provenance.
 - `agentmem candidate approve <candidate-id> [--json]`
 - `agentmem candidate reject <candidate-id> --reason "..." [--json]`
 - `agentmem manage --plan [--json]`
+- `agentmem benchmark run --fixture <path> [--json]`
+- `agentmem benchmark run --all [--json]`
 - `agentmem list [--type <type>] [--all]`
 - `agentmem stale <memory-id> --reason "<reason>"`
 - `agentmem explain <memory-id> [--json]`

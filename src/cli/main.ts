@@ -8,6 +8,8 @@ import { generatePack } from "../core/generate-pack.js";
 import { initProject } from "../core/init-project.js";
 import { installInstructions } from "../core/install-instructions.js";
 import { approveCandidate } from "../core/candidate-approve.js";
+import { formatBenchmarkReport } from "../core/benchmark/format-benchmark.js";
+import { runBenchmarkFixturePath, runProtocolBenchmarks } from "../core/benchmark/run-benchmarks.js";
 import { listCandidates } from "../core/candidate-list.js";
 import { rejectCandidate } from "../core/candidate-reject.js";
 import { listEvidenceEvents } from "../core/list-events.js";
@@ -125,6 +127,8 @@ function helpText(): string {
     "  agentmem candidate approve <candidate-id> [--json]",
     "  agentmem candidate reject <candidate-id> --reason \"...\" [--json]",
     "  agentmem manage --plan [--json]",
+    "  agentmem benchmark run --fixture <path> [--json]",
+    "  agentmem benchmark run --all [--json]",
     "  agentmem search <query> [--type <type>] [--json]",
     "  agentmem list [--type <type>] [--all] [--json]",
     "  agentmem stale <memory-id> --reason <reason>",
@@ -423,6 +427,28 @@ async function main(): Promise<void> {
 
       const result = await getManagePlan({ cwd });
       render(asJson ? result : formatManagePlanText(result), asJson);
+      return;
+    }
+    case "benchmark": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand !== "run") {
+        throw new Error("Unknown benchmark command. Run `agentmem help` for usage.");
+      }
+
+      const fixture = parsed.options.fixture;
+      const all = Boolean(parsed.options.all);
+      if ((typeof fixture !== "string" || fixture.trim().length === 0) && !all) {
+        throw new Error("benchmark run requires --fixture or --all");
+      }
+      if (typeof fixture === "string" && all) {
+        throw new Error("benchmark run accepts only one of --fixture or --all");
+      }
+
+      const result =
+        typeof fixture === "string"
+          ? await runBenchmarkFixturePath(fixture)
+          : await runProtocolBenchmarks({ cwd });
+      render(asJson ? result : formatBenchmarkReport(result), asJson);
       return;
     }
     case "pack": {

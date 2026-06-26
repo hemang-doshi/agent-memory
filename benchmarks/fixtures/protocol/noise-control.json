@@ -1,0 +1,41 @@
+{
+  "schema": "agent-memory-benchmark/v1",
+  "name": "noise-control",
+  "task": "Update component browser PanelCard demo",
+  "packTask": "Update PanelCard component browser demo with TypeScript-safe props",
+  "memories": [
+    {
+      "type": "failed_attempt",
+      "content": "Using defineEntry for JSX-child demos failed due to TypeScript limitations.",
+      "source": "user_explicit",
+      "confidence": "high",
+      "severity": "medium",
+      "tags": ["typescript", "component-browser"]
+    },
+    {
+      "type": "workflow_rule",
+      "content": "Use masala chaach ordering preference for late-night food decisions.",
+      "source": "cli",
+      "confidence": "medium",
+      "severity": "low",
+      "tags": ["food"]
+    }
+  ],
+  "events": [],
+  "preflightCommands": [],
+  "candidates": [],
+  "expectations": {
+    "packIncludes": [
+      "Using defineEntry for JSX-child demos failed"
+    ],
+    "packExcludes": [
+      "masala chaach"
+    ],
+    "matchedMemoryCountAtMost": 1,
+    "receiptTypes": [
+      "session_started",
+      "pack_loaded",
+      "session_finished"
+    ]
+  }
+}
