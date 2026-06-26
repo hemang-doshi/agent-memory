@@ -124,6 +124,7 @@ export interface InitProjectResult {
   gitRoot: string;
   storePath: string;
   configPath: string;
+  warning?: string;
 }
 
 export interface CreateMemoryInput {

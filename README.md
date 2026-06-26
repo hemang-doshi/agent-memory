@@ -12,6 +12,9 @@ Local-first project memory and preflight CLI for coding agents.
 
 The current MVP is CLI-first. MCP integration is intentionally deferred.
 
+Project memory state is created only by `agentmem init`. Other commands require an
+existing `.agent-memory/config.json` and `.agent-memory/memory.db`.
+
 ## Quick Start
 
 ```bash
@@ -29,7 +32,7 @@ pnpm cli preflight --command "npm run render"
 
 ## Commands
 
-- `agentmem init`
+- `agentmem init [--git-init]`
 - `agentmem remember "<content>" --type <type>`
 - `agentmem decision "<content>"`
 - `agentmem failed "<content>"`
@@ -40,6 +43,11 @@ pnpm cli preflight --command "npm run render"
 - `agentmem list [--type <type>] [--all]`
 - `agentmem stale <memory-id> --reason "<reason>"`
 - `agentmem explain <memory-id> [--json]`
+
+`agentmem init` uses the Git root when run inside a repository and adds
+`.agent-memory/` to `.git/info/exclude` without changing `.gitignore`. Outside
+Git, it initializes in the current directory and prints a warning. It runs
+`git init -b main` only when `--git-init` is passed.
 
 ## Repository Layout
 

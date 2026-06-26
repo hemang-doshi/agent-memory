@@ -45,4 +45,18 @@ CREATE TABLE IF NOT EXISTS memory_links (
   related_memory_id TEXT NOT NULL,
   PRIMARY KEY (memory_id, related_memory_id)
 );
+
+CREATE TABLE IF NOT EXISTS schema_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memories_project_created
+ON memories(project_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_events_project_timestamp
+ON events(project_id, timestamp DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_git_root
+ON projects(git_root);
 `;

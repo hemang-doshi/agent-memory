@@ -14,7 +14,7 @@ This repository contains a CLI-first MVP for a local-first agent memory layer. T
 
 This layer owns the product behavior:
 
-- `init-project.ts`: bootstraps Git, config, and the SQLite store
+- `init-project.ts`: explicitly bootstraps config and the SQLite store, with opt-in Git initialization
 - `create-memory.ts`: records typed memories
 - `list-memories.ts`: lists filtered project memories
 - `search-memories.ts`: keyword search with deterministic ranking
@@ -27,9 +27,9 @@ This layer owns the product behavior:
 
 ### `src/db`
 
-- `schema.ts` defines the SQLite tables: `projects`, `memories`, `events`, `memory_links`
-- `database.ts` opens the local SQLite database and applies schema creation
-- `repository.ts` maps between SQLite rows and typed domain records and manages event persistence
+- `schema.ts` defines the SQLite tables: `projects`, `memories`, `events`, `memory_links`, `schema_meta`, and baseline indexes
+- `database.ts` opens the local SQLite database, applies schema creation, and records schema version metadata
+- `repository.ts` maps between SQLite rows and typed domain records, wraps critical memory/event writes in transactions, and manages event persistence
 
 ### `src/domain`
 
@@ -37,7 +37,7 @@ This layer defines the stable shapes and defaults:
 
 - memory enums and record interfaces
 - retrieval and severity/confidence scoring defaults
-- input guard helpers
+- input guard helpers and runtime validators
 
 ### `src/formatters`
 
@@ -49,6 +49,7 @@ This layer defines the stable shapes and defaults:
 The test suite verifies:
 
 - project initialization and idempotency
+- explicit initialization semantics and local Git exclude protection
 - typed memory creation, search, staleness, and explainability
 - memory pack generation and command preflight behavior
 - CLI smoke execution
@@ -57,10 +58,11 @@ The test suite verifies:
 ## Data Flow
 
 1. The CLI runs inside a project directory.
-2. `loadProject()` ensures Git/config/database state exists and loads the current project record.
-3. Core services read or write typed records through `AgentMemoryRepository`.
-4. Every memory mutation and retrieval/preflight action writes an event for provenance.
-5. Packs and preflight use shared retrieval logic, then format results for either humans or machines.
+2. `agentmem init` creates `.agent-memory/`, config, database state, and the project record.
+3. Other commands use `loadProject()` to load existing state and fail with a clear initialization error if missing.
+4. Core services read or write typed records through `AgentMemoryRepository`.
+5. Every memory mutation and retrieval/preflight action writes an event for provenance.
+6. Packs use deterministic relevance signals before ranking boosts, and preflight ranks matching policies by strongest decision and specificity.
 
 ## Current MVP Gaps
 

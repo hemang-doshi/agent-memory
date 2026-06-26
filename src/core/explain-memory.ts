@@ -9,7 +9,7 @@ export async function explainMemory({
   cwd: string;
   memoryId: string;
 }): Promise<{ memory: MemoryRecord; relatedEvents: EventRecord[] }> {
-  const loaded = await loadProject(cwd, false);
+  const loaded = await loadProject(cwd);
 
   try {
     const memory = loaded.repo.getMemory(memoryId);

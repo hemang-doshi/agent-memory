@@ -3,8 +3,19 @@ import type { MemoryRecord, SearchMemoryInput } from "../domain/types.js";
 
 import { loadProject } from "./context.js";
 
-function matchesQuery(memory: MemoryRecord, query: string): boolean {
-  const haystack = [
+function tokenize(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .toLowerCase()
+        .split(/[^a-z0-9_./-]+/)
+        .filter((token) => token.length > 1)
+    )
+  );
+}
+
+function haystack(memory: MemoryRecord): string {
+  return [
     memory.content,
     memory.summary ?? "",
     memory.tags.join(" "),
@@ -12,20 +23,42 @@ function matchesQuery(memory: MemoryRecord, query: string): boolean {
   ]
     .join(" ")
     .toLowerCase();
+}
 
-  return haystack.includes(query.toLowerCase());
+function matchesQuery(memory: MemoryRecord, query: string): boolean {
+  const lowerQuery = query.toLowerCase();
+  const value = haystack(memory);
+  if (value.includes(lowerQuery)) {
+    return true;
+  }
+
+  const queryTokens = tokenize(query);
+  const memoryTokens = tokenize(value);
+  return queryTokens.some((token) => memoryTokens.includes(token));
 }
 
 function scoreMemory(memory: MemoryRecord, query: string): number {
+  const lowerQuery = query.toLowerCase();
+  const value = haystack(memory);
+  const queryTokens = tokenize(query);
+  const memoryTokens = tokenize(value);
+  const overlap = queryTokens.filter((token) => memoryTokens.includes(token)).length;
+
   let score = TYPE_PRIORITIES[memory.type] ?? 0;
   score += (SEVERITY_SCORES[memory.severity] ?? 0) * 10;
   score += (CONFIDENCE_SCORES[memory.confidence] ?? 0) * 5;
 
-  if (memory.content.toLowerCase().includes(query.toLowerCase())) {
-    score += 15;
+  if (value.includes(lowerQuery)) {
+    score += 20;
   }
 
-  if (memory.tags.some((tag) => tag.toLowerCase().includes(query.toLowerCase()))) {
+  score += overlap * 6;
+
+  if (memory.tags.some((tag) => tag.toLowerCase().includes(lowerQuery) || queryTokens.includes(tag.toLowerCase()))) {
+    score += 8;
+  }
+
+  if (memory.paths.some((path) => path.toLowerCase().includes(lowerQuery))) {
     score += 8;
   }
 
@@ -37,7 +70,7 @@ function scoreMemory(memory: MemoryRecord, query: string): number {
 }
 
 export async function searchMemories(input: SearchMemoryInput): Promise<MemoryRecord[]> {
-  const loaded = await loadProject(input.cwd, false);
+  const loaded = await loadProject(input.cwd);
 
   try {
     const memories = loaded.repo.listMemories(loaded.project.projectId);

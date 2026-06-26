@@ -3,12 +3,16 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { EventRecord, JsonRecord, MemoryRecord, ProjectRecord } from "../domain/types.js";
 
-function parseJson<T>(value: unknown, fallback: T): T {
+function parseJson<T>(value: unknown, fallback: T, field: string): T {
   if (typeof value !== "string" || value.length === 0) {
     return fallback;
   }
 
-  return JSON.parse(value) as T;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    throw new Error(`Corrupt Agent Memory database JSON field: ${field}`);
+  }
 }
 
 function stringifyJson(value: unknown): string {
@@ -17,6 +21,17 @@ function stringifyJson(value: unknown): string {
 
 export class AgentMemoryRepository {
   constructor(private readonly db: DatabaseSync) {}
+
+  private transaction(work: () => void): void {
+    this.db.exec("BEGIN");
+    try {
+      work();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 
   upsertProject(project: ProjectRecord): void {
     this.db
@@ -96,6 +111,16 @@ export class AgentMemoryRepository {
     this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
   }
 
+  createMemoryWithEvent(
+    memory: MemoryRecord,
+    event: Omit<EventRecord, "eventId" | "timestamp"> & { eventId?: string; timestamp?: string }
+  ): void {
+    this.transaction(() => {
+      this.insertMemory(memory);
+      this.insertEvent(event);
+    });
+  }
+
   updateMemory(memory: MemoryRecord): void {
     this.db
       .prepare(
@@ -141,6 +166,16 @@ export class AgentMemoryRepository {
       );
 
     this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
+  }
+
+  updateMemoryWithEvent(
+    memory: MemoryRecord,
+    event: Omit<EventRecord, "eventId" | "timestamp"> & { eventId?: string; timestamp?: string }
+  ): void {
+    this.transaction(() => {
+      this.updateMemory(memory);
+      this.insertEvent(event);
+    });
   }
 
   listMemories(projectId: string): MemoryRecord[] {
@@ -229,16 +264,20 @@ export class AgentMemoryRepository {
       status: String(row.status) as MemoryRecord["status"],
       confidence: String(row.confidence) as MemoryRecord["confidence"],
       source: String(row.source) as MemoryRecord["source"],
-      paths: parseJson(row.paths_json, []),
-      tags: parseJson(row.tags_json, []),
+      paths: parseJson(row.paths_json, [], "memories.paths_json"),
+      tags: parseJson(row.tags_json, [], "memories.tags_json"),
       severity: String(row.severity) as MemoryRecord["severity"],
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
       lastUsedAt: row.last_used_at ? String(row.last_used_at) : null,
       expiresAt: row.expires_at ? String(row.expires_at) : null,
-      relatedMemoryIds: parseJson(row.related_memory_ids_json, []),
+      relatedMemoryIds: parseJson(
+        row.related_memory_ids_json,
+        [],
+        "memories.related_memory_ids_json"
+      ),
       supersedesMemoryId: row.supersedes_memory_id ? String(row.supersedes_memory_id) : null,
-      metadata: parseJson(row.metadata_json, {})
+      metadata: parseJson(row.metadata_json, {}, "memories.metadata_json")
     };
   }
 
@@ -249,7 +288,7 @@ export class AgentMemoryRepository {
       eventType: String(row.event_type) as EventRecord["eventType"],
       timestamp: String(row.timestamp),
       actor: String(row.actor) as EventRecord["actor"],
-      payload: parseJson(row.payload_json, {})
+      payload: parseJson(row.payload_json, {}, "events.payload_json")
     };
   }
 }

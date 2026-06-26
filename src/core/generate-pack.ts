@@ -10,7 +10,7 @@ export async function generatePack({
   cwd: string;
   task: string;
 }): Promise<{ markdown: string; matchedMemoryIds: string[] }> {
-  const loaded = await loadProject(cwd, false);
+  const loaded = await loadProject(cwd);
 
   try {
     const memories = await retrieveMemories({

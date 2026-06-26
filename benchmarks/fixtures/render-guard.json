@@ -1,5 +1,5 @@
 {
-  "task": "Implement visual change in the reel scene",
+  "task": "Implement visual change in the reel scene without full renders",
   "command": "npm run render",
   "expectedDecision": "warn",
   "expectedPackIncludes": [

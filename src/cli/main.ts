@@ -9,7 +9,14 @@ import { markMemoryStale } from "../core/mark-memory-stale.js";
 import { preflightCommand } from "../core/preflight-command.js";
 import { searchMemories } from "../core/search-memories.js";
 import { formatTextList, formatTextPreflight } from "../formatters/output.js";
-import type { CreateMemoryInput, MemoryType, PreflightDecision } from "../domain/types.js";
+import type { CreateMemoryInput, MemoryRecord } from "../domain/types.js";
+import {
+  parseCommandPolicyMatchType,
+  parseMemorySource,
+  parseMemoryType,
+  parsePreflightDecision,
+  validateRegexPattern
+} from "../domain/validators.js";
 
 interface ParsedArgs {
   positionals: string[];
@@ -55,6 +62,30 @@ function render(value: unknown, asJson: boolean): void {
   process.stdout.write(`${output}\n`);
 }
 
+function formatCreatedMemory(memory: MemoryRecord): string {
+  return `Created ${memory.id} (${memory.type}).`;
+}
+
+function helpText(): string {
+  return [
+    "Agent Memory CLI",
+    "",
+    "Usage:",
+    "  agentmem init [--git-init] [--json]",
+    "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]",
+    "  agentmem decision <content>",
+    "  agentmem failed <content>",
+    "  agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block]",
+    "  agentmem pack <task> [--json]",
+    "  agentmem preflight --command <command> [--json]",
+    "  agentmem search <query> [--type <type>] [--json]",
+    "  agentmem list [--type <type>] [--all] [--json]",
+    "  agentmem stale <memory-id> --reason <reason>",
+    "  agentmem explain <memory-id>",
+    ""
+  ].join("\n");
+}
+
 async function handleRemember(command: string, parsed: ParsedArgs, cwd: string): Promise<void> {
   const content = parsed.positionals.join(" ").trim();
   if (!content) {
@@ -69,8 +100,11 @@ async function handleRemember(command: string, parsed: ParsedArgs, cwd: string):
   };
 
   if (command === "remember") {
-    base.type = requireOption(parsed, "type") as MemoryType;
-    base.source = (parsed.options.source as CreateMemoryInput["source"]) ?? "cli";
+    base.type = parseMemoryType(requireOption(parsed, "type"));
+    base.source =
+      parsed.options.source === undefined
+        ? "cli"
+        : parseMemorySource(parsed.options.source);
   }
 
   if (command === "decision") {
@@ -84,12 +118,19 @@ async function handleRemember(command: string, parsed: ParsedArgs, cwd: string):
   }
 
   if (command === "policy") {
+    const commandPattern = requireOption(parsed, "match");
+    const matchType = parseCommandPolicyMatchType(parsed.options["match-type"] ?? "substring");
+    const decision = parsePreflightDecision(parsed.options.decision ?? "warn");
+    if (matchType === "regex") {
+      validateRegexPattern(commandPattern);
+    }
+
     base.type = "command_policy";
     base.source = "user_explicit";
     base.metadata = {
-      commandPattern: requireOption(parsed, "match"),
-      matchType: (parsed.options["match-type"] as string | undefined) ?? "substring",
-      decision: (parsed.options.decision as PreflightDecision | undefined) ?? "warn",
+      commandPattern,
+      matchType,
+      decision,
       suggestedAction:
         typeof parsed.options.suggest === "string" ? parsed.options.suggest : undefined
     };
@@ -105,15 +146,17 @@ async function handleRemember(command: string, parsed: ParsedArgs, cwd: string):
   }
 
   const result = await createMemory(base);
-  render(result, Boolean(parsed.options.json));
+  const asJson = Boolean(parsed.options.json);
+  render(asJson ? result : formatCreatedMemory(result), asJson);
 }
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   const cwd = process.cwd();
 
-  if (!command) {
-    throw new Error("No command provided");
+  if (!command || command === "help" || command === "--help") {
+    render(helpText(), false);
+    return;
   }
 
   const parsed = parseArgs(rest);
@@ -121,11 +164,20 @@ async function main(): Promise<void> {
 
   switch (command) {
     case "init": {
-      const result = await initProject({ cwd });
+      const result = await initProject({ cwd, gitInit: Boolean(parsed.options["git-init"]) });
       render(
         asJson
           ? result
-          : `Initialized Agent Memory for project:\n- name: ${result.name}\n- git_root: ${result.gitRoot}\n- project_id: ${result.projectId}\n- store: ${result.storePath}`,
+          : [
+              `Initialized Agent Memory for project:`,
+              `- name: ${result.name}`,
+              `- git_root: ${result.gitRoot}`,
+              `- project_id: ${result.projectId}`,
+              `- store: ${result.storePath}`,
+              result.warning ?? ""
+            ]
+              .filter(Boolean)
+              .join("\n"),
         asJson
       );
       return;
@@ -155,7 +207,7 @@ async function main(): Promise<void> {
       const result = await searchMemories({
         cwd,
         query,
-        type: parsed.options.type as MemoryType | undefined,
+        type: parsed.options.type === undefined ? undefined : parseMemoryType(parsed.options.type),
         activeOnly: parsed.options.all ? false : true
       });
       render(asJson ? result : formatTextList(result), asJson);
@@ -170,7 +222,7 @@ async function main(): Promise<void> {
     case "list": {
       const result = await listMemories({
         cwd,
-        type: parsed.options.type as MemoryType | undefined,
+        type: parsed.options.type === undefined ? undefined : parseMemoryType(parsed.options.type),
         activeOnly: parsed.options.all ? false : true
       });
       render(asJson ? result : formatTextList(result), asJson);
@@ -206,7 +258,7 @@ async function main(): Promise<void> {
       return;
     }
     default:
-      throw new Error(`Unknown command: ${command}`);
+      throw new Error(`Unknown command: ${command}\nRun \`agentmem help\` for usage.`);
   }
 }
 

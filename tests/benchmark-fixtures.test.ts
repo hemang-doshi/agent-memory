@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createMemory } from "../src/core/create-memory.js";
 import { generatePack } from "../src/core/generate-pack.js";
@@ -8,6 +10,9 @@ import { preflightCommand } from "../src/core/preflight-command.js";
 import { cleanupWorkspace, createTempWorkspace } from "./helpers.js";
 
 const workspaces: string[] = [];
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const repoRoot = resolve(__dirname, "..");
 
 afterEach(async () => {
   await Promise.all(workspaces.splice(0).map(cleanupWorkspace));
@@ -41,12 +46,8 @@ describe("benchmark fixtures", () => {
       workspaces.push(cwd);
       await initProject({ cwd });
 
-      const fixture = JSON.parse(
-        readFileSync(
-          `/Users/hemangdoshi/Developer/agent-memory/benchmarks/fixtures/${fixtureName}.json`,
-          "utf8"
-        )
-      ) as BenchmarkFixture;
+      const fixturePath = resolve(repoRoot, "benchmarks", "fixtures", `${fixtureName}.json`);
+      const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as BenchmarkFixture;
 
       for (const memory of fixture.memories) {
         await createMemory({

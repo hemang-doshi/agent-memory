@@ -1,7 +1,12 @@
 import { openDatabase } from "../db/database.js";
 import { AgentMemoryRepository } from "../db/repository.js";
-import { buildProjectRecord, ensureProjectContext, initializeGitRepo } from "../config/project-context.js";
-import type { ProjectContext, } from "../config/project-context.js";
+import {
+  buildProjectRecord,
+  initProjectContext,
+  loadExistingProjectContext,
+  type InitProjectContextOptions
+} from "../config/project-context.js";
+import type { ProjectContext } from "../config/project-context.js";
 import type { ProjectRecord } from "../domain/types.js";
 
 export interface LoadedProject {
@@ -11,12 +16,7 @@ export interface LoadedProject {
   close: () => void;
 }
 
-export async function loadProject(cwd: string, ensureInitialized = true): Promise<LoadedProject> {
-  if (ensureInitialized) {
-    await initializeGitRepo(cwd);
-  }
-
-  const context = await ensureProjectContext(cwd);
+async function openProject(context: ProjectContext): Promise<LoadedProject> {
   const db = openDatabase(context.storePath);
   const repo = new AgentMemoryRepository(db);
   let project = repo.getProjectByRoot(context.gitRoot);
@@ -32,4 +32,15 @@ export async function loadProject(cwd: string, ensureInitialized = true): Promis
     repo,
     close: () => db.close()
   };
+}
+
+export async function initProject(
+  cwd: string,
+  options: InitProjectContextOptions = {}
+): Promise<LoadedProject> {
+  return openProject(await initProjectContext(cwd, options));
+}
+
+export async function loadProject(cwd: string): Promise<LoadedProject> {
+  return openProject(await loadExistingProjectContext(cwd));
 }
