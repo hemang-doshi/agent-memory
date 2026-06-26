@@ -5,6 +5,7 @@ export const MEMORY_TYPES = [
   "command_policy",
   "failed_attempt",
   "known_fix",
+  "agent_mistake",
   "fragile_file",
   "workflow_rule",
   "architecture_note",
@@ -52,6 +53,7 @@ export const RECEIPT_TYPES = [
   "warning_triggered",
   "block_triggered",
   "candidate_proposed",
+  "candidate_reviewed",
   "session_finished"
 ] as const;
 export const CANDIDATE_TYPES = [
@@ -235,4 +237,16 @@ export interface PreflightResult {
   message: string;
   matchedMemoryIds: string[];
   suggestedAction?: string;
+}
+
+export interface ManagePlan {
+  counts: Record<CandidateStatus, number>;
+  proposedCandidates: Array<{
+    candidateId: string;
+    type: CandidateType;
+    content: string;
+    evidence: string;
+    sessionId: string | null;
+    createdAt: string;
+  }>;
 }

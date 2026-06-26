@@ -59,6 +59,21 @@ pnpm cli session receipt --session "$SESSION" --json
 self-reporting. Candidate proposals are stored as untrusted
 `memory_candidates` records and do not create trusted durable memories.
 
+## Candidate Review
+
+Agents can propose memory candidates, but candidates are untrusted until
+reviewed.
+
+```bash
+agentmem candidate propose --session ses_x --type failed_attempt --content "..." --evidence "..."
+agentmem manage --plan
+agentmem candidate approve cand_x
+agentmem candidate reject cand_y --reason "Too task-specific."
+```
+
+Approved candidates become active memory and can appear in future packs.
+Rejected candidates are retained for audit but are never injected.
+
 ## Commands
 
 - `agentmem init [--git-init] [--json]`
@@ -77,6 +92,9 @@ self-reporting. Candidate proposals are stored as untrusted
 - `agentmem preflight --command "<command>" [--session <session-id>] [--json]`
 - `agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." [--json]`
 - `agentmem candidate list [--status proposed] [--json]`
+- `agentmem candidate approve <candidate-id> [--json]`
+- `agentmem candidate reject <candidate-id> --reason "..." [--json]`
+- `agentmem manage --plan [--json]`
 - `agentmem list [--type <type>] [--all]`
 - `agentmem stale <memory-id> --reason "<reason>"`
 - `agentmem explain <memory-id> [--json]`
@@ -100,7 +118,8 @@ Git, it initializes in the current directory and prints a warning. It runs
 
 - no MCP server yet
 - no `edit` command yet
-- no candidate approve/reject/merge/supersede workflow yet
+- no candidate merge/supersede workflow yet
+- no interactive memory management UI yet
 - no automatic stale-memory conflict detection from repo state
 - no path-scoped edit preflight yet
 - no global shared memory database
