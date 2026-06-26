@@ -135,6 +135,26 @@ describe("candidate review", () => {
     );
   });
 
+  test("command_policy candidates cannot be approved without command metadata", async () => {
+    const cwd = await createTempWorkspace("agentmem-candidate-approve-policy");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+    const session = await startSession({ cwd, task: "Review command policy candidate" });
+    const candidate = await proposeCandidate({
+      cwd,
+      sessionId: session.sessionId,
+      type: "command_policy",
+      content: "Do not run npm run render.",
+      evidence: "Render is expensive."
+    });
+
+    await expect(approveCandidate({ cwd, candidateId: candidate.candidateId })).rejects.toThrow(
+      "Cannot approve command_policy candidates yet: commandPattern metadata is required."
+    );
+
+    expect(await listMemories({ cwd, activeOnly: false })).toHaveLength(0);
+  });
+
   test("reject proposed candidate records reason, receipt, and creates no memory", async () => {
     const cwd = await createTempWorkspace("agentmem-candidate-reject");
     workspaces.push(cwd);

@@ -33,6 +33,12 @@ export async function approveCandidate({
     }
 
     requireProposedCandidate(existing);
+    if (existing.type === "command_policy") {
+      throw new Error(
+        "Cannot approve command_policy candidates yet: commandPattern metadata is required."
+      );
+    }
+
     assertNoObviousSecret(existing.content);
     assertNoObviousSecret(existing.evidence);
 
