@@ -9,6 +9,7 @@ Local-first project memory and preflight CLI for coding agents.
 - generate compact markdown memory packs for a task
 - search and explain stored memories
 - warn before risky commands repeat known mistakes
+- record protocol receipts that prove an agent started a session, loaded memory, preflighted commands, proposed candidates, and finished with an audit summary
 
 The current MVP is CLI-first. MCP integration is intentionally deferred.
 
@@ -30,16 +31,52 @@ pnpm cli pack "Implement the next reel scene"
 pnpm cli preflight --command "npm run render"
 ```
 
+## Protocol Spine v0.2-alpha
+
+The v0.2-alpha slice adds a local audit spine around the existing memory and
+preflight workflow:
+
+```bash
+pnpm cli install-instructions
+pnpm cli doctor --json
+
+SESSION=$(pnpm cli session start "Implement protocol spine smoke test" --json \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
+
+pnpm cli pack "Implement protocol spine smoke test" --session "$SESSION" --json
+pnpm cli preflight --command "npm run render" --session "$SESSION" --json
+pnpm cli candidate propose \
+  --session "$SESSION" \
+  --type failed_attempt \
+  --content "Reusable lesson learned." \
+  --evidence "Observed during this implementation." \
+  --json
+pnpm cli session finish --session "$SESSION" --summary "Smoke test complete." --json
+pnpm cli session receipt --session "$SESSION" --json
+```
+
+`session receipt` reads from SQLite protocol receipts, not from agent
+self-reporting. Candidate proposals are stored as untrusted
+`memory_candidates` records and do not create trusted durable memories.
+
 ## Commands
 
-- `agentmem init [--git-init]`
+- `agentmem init [--git-init] [--json]`
+- `agentmem install-instructions`
+- `agentmem uninstall-instructions`
+- `agentmem doctor [--json]`
+- `agentmem session start "<task>" [--json]`
+- `agentmem session finish --session <session-id> --summary "..." [--json]`
+- `agentmem session receipt --session <session-id> [--json]`
 - `agentmem remember "<content>" --type <type>`
 - `agentmem decision "<content>"`
 - `agentmem failed "<content>"`
 - `agentmem policy "<content>" --match "<pattern>"`
-- `agentmem pack "<task>" [--json]`
+- `agentmem pack "<task>" [--session <session-id>] [--json]`
 - `agentmem search "<query>" [--json]`
-- `agentmem preflight --command "<command>" [--json]`
+- `agentmem preflight --command "<command>" [--session <session-id>] [--json]`
+- `agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." [--json]`
+- `agentmem candidate list [--status proposed] [--json]`
 - `agentmem list [--type <type>] [--all]`
 - `agentmem stale <memory-id> --reason "<reason>"`
 - `agentmem explain <memory-id> [--json]`
@@ -63,6 +100,7 @@ Git, it initializes in the current directory and prints a warning. It runs
 
 - no MCP server yet
 - no `edit` command yet
+- no candidate approve/reject/merge/supersede workflow yet
 - no automatic stale-memory conflict detection from repo state
 - no path-scoped edit preflight yet
 - no global shared memory database

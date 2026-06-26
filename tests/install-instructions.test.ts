@@ -93,6 +93,16 @@ describe("instruction installer", () => {
     expect(content).not.toContain(AGENT_MEMORY_START_MARKER);
   });
 
+  test("uninstall does not create AGENTS.md when missing", async () => {
+    const cwd = await createTempWorkspace("agentmem-install-uninstall-missing");
+    workspaces.push(cwd);
+    const agentsPath = join(cwd, "AGENTS.md");
+
+    await uninstallInstructions({ cwd });
+
+    expect(existsSync(agentsPath)).toBe(false);
+  });
+
   test("doctor reports router installed or missing", async () => {
     const cwd = await createTempWorkspace("agentmem-doctor");
     workspaces.push(cwd);

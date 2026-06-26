@@ -11,7 +11,12 @@ export async function uninstallInstructions({ cwd }: { cwd: string }): Promise<{
 }> {
   const { gitRoot } = await resolveProjectRoot(cwd);
   const agentsPath = join(gitRoot, "AGENTS.md");
-  const current = existsSync(agentsPath) ? readFileSync(agentsPath, "utf8") : "";
+
+  if (!existsSync(agentsPath)) {
+    return { agentsPath, routerInstalled: false };
+  }
+
+  const current = readFileSync(agentsPath, "utf8");
   writeFileSync(agentsPath, removeRouterBlock(current));
 
   return { agentsPath, routerInstalled: false };
