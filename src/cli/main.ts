@@ -10,10 +10,12 @@ import { installInstructions } from "../core/install-instructions.js";
 import { approveCandidate } from "../core/candidate-approve.js";
 import { listCandidates } from "../core/candidate-list.js";
 import { rejectCandidate } from "../core/candidate-reject.js";
+import { listEvidenceEvents } from "../core/list-events.js";
 import { listMemories } from "../core/list-memories.js";
 import { formatManagePlanText, getManagePlan } from "../core/manage-plan.js";
 import { markMemoryStale } from "../core/mark-memory-stale.js";
 import { preflightCommand } from "../core/preflight-command.js";
+import { recordEvidenceEvent } from "../core/record-event.js";
 import { searchMemories } from "../core/search-memories.js";
 import { finishSession } from "../core/session-finish.js";
 import { formatSessionReceiptText, getSessionReceipt } from "../core/session-receipt.js";
@@ -26,6 +28,7 @@ import {
   parseCandidateStatus,
   parseCandidateType,
   parseCommandPolicyMatchType,
+  parseEvidenceEventType,
   parseMemorySource,
   parseMemoryType,
   parsePreflightDecision,
@@ -80,6 +83,23 @@ function formatCreatedMemory(memory: MemoryRecord): string {
   return `Created ${memory.id} (${memory.type}).`;
 }
 
+function optionalString(parsed: ParsedArgs, name: string): string | undefined {
+  const value = parsed.options[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+function parseExitCode(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!/^-?\d+$/.test(value)) {
+    throw new Error(`Invalid --exit-code: ${value}`);
+  }
+
+  return Number(value);
+}
+
 function helpText(): string {
   return [
     "Agent Memory CLI",
@@ -92,13 +112,15 @@ function helpText(): string {
     "  agentmem session start \"<task>\" [--json]",
     "  agentmem session finish --session <session-id> --summary \"...\" [--json]",
     "  agentmem session receipt --session <session-id> [--json]",
+    "  agentmem event record --session <session-id> --type <type> --summary \"...\" [--command \"...\"] [--exit-code 1] [--json]",
+    "  agentmem event list --session <session-id> [--json]",
     "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]",
     "  agentmem decision <content>",
     "  agentmem failed <content>",
     "  agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block]",
     "  agentmem pack <task> [--session <session-id>] [--json]",
     "  agentmem preflight --command <command> [--session <session-id>] [--json]",
-    "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" --evidence \"...\" [--json]",
+    "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" [--evidence \"...\"] [--evidence-event <event-id>] [--json]",
     "  agentmem candidate list [--status proposed] [--json]",
     "  agentmem candidate approve <candidate-id> [--json]",
     "  agentmem candidate reject <candidate-id> --reason \"...\" [--json]",
@@ -269,6 +291,39 @@ async function main(): Promise<void> {
 
       throw new Error("Unknown session command. Run `agentmem help` for usage.");
     }
+    case "event": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "record") {
+        const result = await recordEvidenceEvent({
+          cwd,
+          sessionId: requireOption(parsed, "session"),
+          type: parseEvidenceEventType(requireOption(parsed, "type")),
+          summary: requireOption(parsed, "summary"),
+          command: optionalString(parsed, "command"),
+          exitCode: parseExitCode(optionalString(parsed, "exit-code"))
+        });
+        render(asJson ? result : `Recorded ${result.eventId}.`, asJson);
+        return;
+      }
+
+      if (subcommand === "list") {
+        const result = await listEvidenceEvents({
+          cwd,
+          sessionId: requireOption(parsed, "session")
+        });
+        render(
+          asJson
+            ? result
+            : result
+                .map((event) => `${event.eventId} ${event.eventType} ${String(event.payload.summary ?? "")}`)
+                .join("\n"),
+          asJson
+        );
+        return;
+      }
+
+      throw new Error("Unknown event command. Run `agentmem help` for usage.");
+    }
     case "candidate": {
       const subcommand = parsed.positionals[0];
       if (subcommand === "propose") {
@@ -277,7 +332,8 @@ async function main(): Promise<void> {
           sessionId: requireOption(parsed, "session"),
           type: parseCandidateType(requireOption(parsed, "type")),
           content: requireOption(parsed, "content"),
-          evidence: requireOption(parsed, "evidence")
+          evidence: optionalString(parsed, "evidence"),
+          evidenceEventId: optionalString(parsed, "evidence-event")
         });
         render(asJson ? result : `Proposed ${result.candidateId}.`, asJson);
         return;

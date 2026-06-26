@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
   confidence TEXT NOT NULL,
   severity TEXT NOT NULL,
   evidence TEXT NOT NULL,
+  evidence_event_ids_json TEXT NOT NULL DEFAULT '[]',
   candidate_status TEXT NOT NULL,
   proposed_by TEXT NOT NULL,
   created_at TEXT NOT NULL,

@@ -46,8 +46,15 @@ export const CONFIDENCE_LEVELS = ["low", "medium", "high"] as const;
 export const SEVERITY_LEVELS = ["low", "medium", "high"] as const;
 export const PREFLIGHT_DECISIONS = ["allow", "warn", "block"] as const;
 export const SESSION_STATUSES = ["active", "finished"] as const;
+export const EVIDENCE_EVENT_TYPES = [
+  "test_result",
+  "command_result",
+  "user_correction",
+  "agent_observation"
+] as const;
 export const RECEIPT_TYPES = [
   "session_started",
+  "event_recorded",
   "pack_loaded",
   "preflight_checked",
   "warning_triggered",
@@ -80,6 +87,7 @@ export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
 export type SeverityLevel = (typeof SEVERITY_LEVELS)[number];
 export type PreflightDecision = (typeof PREFLIGHT_DECISIONS)[number];
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
+export type EvidenceEventType = (typeof EVIDENCE_EVENT_TYPES)[number];
 export type ReceiptType = (typeof RECEIPT_TYPES)[number];
 export type CandidateType = (typeof CANDIDATE_TYPES)[number];
 export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
@@ -143,7 +151,8 @@ export interface EventRecord {
     | "command_preflighted"
     | "memory_retrieved"
     | "memory_marked_stale"
-    | "pack_generated";
+    | "pack_generated"
+    | EvidenceEventType;
   timestamp: string;
   actor: "user" | "agent" | "system";
   payload: JsonRecord;
@@ -179,6 +188,7 @@ export interface MemoryCandidateRecord {
   confidence: ConfidenceLevel;
   severity: SeverityLevel;
   evidence: string;
+  evidenceEventIds: string[];
   candidateStatus: CandidateStatus;
   proposedBy: "agent" | "user" | "system";
   createdAt: string;
