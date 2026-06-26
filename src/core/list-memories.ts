@@ -11,7 +11,7 @@ export async function listMemories({
   type?: MemoryType;
   activeOnly?: boolean;
 }): Promise<MemoryRecord[]> {
-  const loaded = await loadProject(cwd, false);
+  const loaded = await loadProject(cwd);
 
   try {
     const memories = loaded.repo.listMemories(loaded.project.projectId);

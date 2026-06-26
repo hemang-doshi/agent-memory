@@ -1,14 +1,27 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import type { EventRecord, JsonRecord, MemoryRecord, ProjectRecord } from "../domain/types.js";
+import type {
+  EventRecord,
+  JsonRecord,
+  MemoryCandidateRecord,
+  MemoryRecord,
+  ProjectRecord,
+  ProtocolReceiptRecord,
+  ReceiptType,
+  SessionRecord
+} from "../domain/types.js";
 
-function parseJson<T>(value: unknown, fallback: T): T {
+function parseJson<T>(value: unknown, fallback: T, field: string): T {
   if (typeof value !== "string" || value.length === 0) {
     return fallback;
   }
 
-  return JSON.parse(value) as T;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    throw new Error(`Corrupt Agent Memory database JSON field: ${field}`);
+  }
 }
 
 function stringifyJson(value: unknown): string {
@@ -17,6 +30,17 @@ function stringifyJson(value: unknown): string {
 
 export class AgentMemoryRepository {
   constructor(private readonly db: DatabaseSync) {}
+
+  private transaction(work: () => void): void {
+    this.db.exec("BEGIN");
+    try {
+      work();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 
   upsertProject(project: ProjectRecord): void {
     this.db
@@ -96,6 +120,16 @@ export class AgentMemoryRepository {
     this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
   }
 
+  createMemoryWithEvent(
+    memory: MemoryRecord,
+    event: Omit<EventRecord, "eventId" | "timestamp"> & { eventId?: string; timestamp?: string }
+  ): void {
+    this.transaction(() => {
+      this.insertMemory(memory);
+      this.insertEvent(event);
+    });
+  }
+
   updateMemory(memory: MemoryRecord): void {
     this.db
       .prepare(
@@ -141,6 +175,16 @@ export class AgentMemoryRepository {
       );
 
     this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
+  }
+
+  updateMemoryWithEvent(
+    memory: MemoryRecord,
+    event: Omit<EventRecord, "eventId" | "timestamp"> & { eventId?: string; timestamp?: string }
+  ): void {
+    this.transaction(() => {
+      this.updateMemory(memory);
+      this.insertEvent(event);
+    });
   }
 
   listMemories(projectId: string): MemoryRecord[] {
@@ -206,6 +250,161 @@ export class AgentMemoryRepository {
       });
   }
 
+  insertSession(session: SessionRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO sessions (
+          session_id, project_id, task, status, started_at, finished_at, summary
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        session.sessionId,
+        session.projectId,
+        session.task,
+        session.status,
+        session.startedAt,
+        session.finishedAt,
+        session.summary
+      );
+  }
+
+  getSession(sessionId: string): SessionRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM sessions WHERE session_id = ? LIMIT 1")
+      .get(sessionId) as Record<string, unknown> | undefined;
+
+    return row ? this.mapSession(row) : null;
+  }
+
+  finishSession({
+    sessionId,
+    finishedAt,
+    summary
+  }: {
+    sessionId: string;
+    finishedAt: string;
+    summary: string;
+  }): SessionRecord {
+    this.db
+      .prepare(
+        `UPDATE sessions
+         SET status = ?, finished_at = ?, summary = ?
+         WHERE session_id = ?`
+      )
+      .run("finished", finishedAt, summary, sessionId);
+
+    const session = this.getSession(sessionId);
+    if (!session) {
+      throw new Error(`Unknown session: ${sessionId}`);
+    }
+
+    return session;
+  }
+
+  insertProtocolReceipt(input: {
+    projectId: string;
+    sessionId?: string | null;
+    receiptType: ReceiptType;
+    payload?: JsonRecord;
+    receiptId?: string;
+    createdAt?: string;
+  }): ProtocolReceiptRecord {
+    const receipt: ProtocolReceiptRecord = {
+      receiptId: input.receiptId ?? `rcp_${randomUUID().replaceAll("-", "").slice(0, 10)}`,
+      projectId: input.projectId,
+      sessionId: input.sessionId ?? null,
+      receiptType: input.receiptType,
+      payload: input.payload ?? {},
+      createdAt: input.createdAt ?? new Date().toISOString()
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO protocol_receipts (
+          receipt_id, project_id, session_id, receipt_type, payload_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        receipt.receiptId,
+        receipt.projectId,
+        receipt.sessionId,
+        receipt.receiptType,
+        stringifyJson(receipt.payload),
+        receipt.createdAt
+      );
+
+    return receipt;
+  }
+
+  listProtocolReceipts(projectId: string, sessionId?: string): ProtocolReceiptRecord[] {
+    const rows = sessionId
+      ? (this.db
+          .prepare(
+            `SELECT * FROM protocol_receipts
+             WHERE project_id = ? AND session_id = ?
+             ORDER BY created_at ASC`
+          )
+          .all(projectId, sessionId) as Record<string, unknown>[])
+      : (this.db
+          .prepare(
+            `SELECT * FROM protocol_receipts
+             WHERE project_id = ?
+             ORDER BY created_at DESC`
+          )
+          .all(projectId) as Record<string, unknown>[]);
+
+    return rows.map((row) => this.mapProtocolReceipt(row));
+  }
+
+  insertMemoryCandidate(candidate: MemoryCandidateRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO memory_candidates (
+          candidate_id, project_id, session_id, type, content, scope, source,
+          confidence, severity, evidence, candidate_status, proposed_by,
+          created_at, reviewed_at, review_reason, target_memory_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        candidate.candidateId,
+        candidate.projectId,
+        candidate.sessionId,
+        candidate.type,
+        candidate.content,
+        candidate.scope,
+        candidate.source,
+        candidate.confidence,
+        candidate.severity,
+        candidate.evidence,
+        candidate.candidateStatus,
+        candidate.proposedBy,
+        candidate.createdAt,
+        candidate.reviewedAt,
+        candidate.reviewReason,
+        candidate.targetMemoryId
+      );
+  }
+
+  listMemoryCandidates(projectId: string, status?: string): MemoryCandidateRecord[] {
+    const rows = status
+      ? (this.db
+          .prepare(
+            `SELECT * FROM memory_candidates
+             WHERE project_id = ? AND candidate_status = ?
+             ORDER BY created_at DESC`
+          )
+          .all(projectId, status) as Record<string, unknown>[])
+      : (this.db
+          .prepare(
+            `SELECT * FROM memory_candidates
+             WHERE project_id = ?
+             ORDER BY created_at DESC`
+          )
+          .all(projectId) as Record<string, unknown>[]);
+
+    return rows.map((row) => this.mapMemoryCandidate(row));
+  }
+
   private syncMemoryLinks(memoryId: string, relatedIds: string[]): void {
     this.db.prepare("DELETE FROM memory_links WHERE memory_id = ?").run(memoryId);
 
@@ -229,16 +428,20 @@ export class AgentMemoryRepository {
       status: String(row.status) as MemoryRecord["status"],
       confidence: String(row.confidence) as MemoryRecord["confidence"],
       source: String(row.source) as MemoryRecord["source"],
-      paths: parseJson(row.paths_json, []),
-      tags: parseJson(row.tags_json, []),
+      paths: parseJson(row.paths_json, [], "memories.paths_json"),
+      tags: parseJson(row.tags_json, [], "memories.tags_json"),
       severity: String(row.severity) as MemoryRecord["severity"],
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
       lastUsedAt: row.last_used_at ? String(row.last_used_at) : null,
       expiresAt: row.expires_at ? String(row.expires_at) : null,
-      relatedMemoryIds: parseJson(row.related_memory_ids_json, []),
+      relatedMemoryIds: parseJson(
+        row.related_memory_ids_json,
+        [],
+        "memories.related_memory_ids_json"
+      ),
       supersedesMemoryId: row.supersedes_memory_id ? String(row.supersedes_memory_id) : null,
-      metadata: parseJson(row.metadata_json, {})
+      metadata: parseJson(row.metadata_json, {}, "memories.metadata_json")
     };
   }
 
@@ -249,7 +452,51 @@ export class AgentMemoryRepository {
       eventType: String(row.event_type) as EventRecord["eventType"],
       timestamp: String(row.timestamp),
       actor: String(row.actor) as EventRecord["actor"],
-      payload: parseJson(row.payload_json, {})
+      payload: parseJson(row.payload_json, {}, "events.payload_json")
+    };
+  }
+
+  private mapSession(row: Record<string, unknown>): SessionRecord {
+    return {
+      sessionId: String(row.session_id),
+      projectId: String(row.project_id),
+      task: String(row.task),
+      status: String(row.status) as SessionRecord["status"],
+      startedAt: String(row.started_at),
+      finishedAt: row.finished_at ? String(row.finished_at) : null,
+      summary: row.summary ? String(row.summary) : null
+    };
+  }
+
+  private mapProtocolReceipt(row: Record<string, unknown>): ProtocolReceiptRecord {
+    return {
+      receiptId: String(row.receipt_id),
+      projectId: String(row.project_id),
+      sessionId: row.session_id ? String(row.session_id) : null,
+      receiptType: String(row.receipt_type) as ProtocolReceiptRecord["receiptType"],
+      payload: parseJson(row.payload_json, {}, "protocol_receipts.payload_json"),
+      createdAt: String(row.created_at)
+    };
+  }
+
+  private mapMemoryCandidate(row: Record<string, unknown>): MemoryCandidateRecord {
+    return {
+      candidateId: String(row.candidate_id),
+      projectId: String(row.project_id),
+      sessionId: row.session_id ? String(row.session_id) : null,
+      type: String(row.type) as MemoryCandidateRecord["type"],
+      content: String(row.content),
+      scope: String(row.scope) as MemoryCandidateRecord["scope"],
+      source: String(row.source) as MemoryCandidateRecord["source"],
+      confidence: String(row.confidence) as MemoryCandidateRecord["confidence"],
+      severity: String(row.severity) as MemoryCandidateRecord["severity"],
+      evidence: String(row.evidence),
+      candidateStatus: String(row.candidate_status) as MemoryCandidateRecord["candidateStatus"],
+      proposedBy: String(row.proposed_by) as MemoryCandidateRecord["proposedBy"],
+      createdAt: String(row.created_at),
+      reviewedAt: row.reviewed_at ? String(row.reviewed_at) : null,
+      reviewReason: row.review_reason ? String(row.review_reason) : null,
+      targetMemoryId: row.target_memory_id ? String(row.target_memory_id) : null
     };
   }
 }

@@ -54,6 +54,45 @@ describe("memory CRUD", () => {
     });
 
     expect(searchResults[0]?.content).toContain("reusable component library");
+
+    const reorderedSearchResults = await searchMemories({
+      cwd,
+      query: "library component",
+      activeOnly: true
+    });
+    expect(reorderedSearchResults[0]?.content).toContain("reusable component library");
+
+    const tagResults = await searchMemories({
+      cwd,
+      query: "design-system",
+      activeOnly: true
+    });
+    expect(tagResults[0]?.id).toBe(decision.id);
+
+    const pathResults = await searchMemories({
+      cwd,
+      query: "A04.tsx",
+      path: "src/reel/A04.tsx",
+      activeOnly: true
+    });
+    expect(pathResults[0]?.id).toBe(decision.id);
+  });
+
+  test("search excludes inactive memories by default", async () => {
+    const cwd = await createTempWorkspace("agentmem-search-inactive");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    await createMemory({
+      cwd,
+      content: "Use legacy renderer.",
+      type: "decision",
+      source: "cli",
+      status: "stale"
+    });
+
+    expect(await searchMemories({ cwd, query: "legacy renderer", activeOnly: true })).toEqual([]);
+    expect(await searchMemories({ cwd, query: "legacy renderer", activeOnly: false })).toHaveLength(1);
   });
 
   test("marks memories stale and keeps explainability context", async () => {

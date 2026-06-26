@@ -1,23 +1,31 @@
 import { formatPackMarkdown } from "../formatters/pack-markdown.js";
 
 import { loadProject } from "./context.js";
+import { requireSession, writeProtocolReceipt } from "./protocol-receipts.js";
 import { retrieveMemories } from "./retrieve-memories.js";
 
 export async function generatePack({
   cwd,
-  task
+  task,
+  sessionId
 }: {
   cwd: string;
   task: string;
-}): Promise<{ markdown: string; matchedMemoryIds: string[] }> {
-  const loaded = await loadProject(cwd, false);
+  sessionId?: string;
+}): Promise<{ markdown: string; matchedMemoryIds: string[]; sessionId?: string }> {
+  const loaded = await loadProject(cwd);
 
   try {
+    if (sessionId) {
+      requireSession(loaded, sessionId);
+    }
+
     const memories = await retrieveMemories({
       cwd,
       task,
       maxResults: loaded.context.config.retrieval.max_results
     });
+    const matchedMemoryIds = memories.map((memory) => memory.id);
 
     const markdown = formatPackMarkdown(loaded.project.name, memories).slice(
       0,
@@ -28,12 +36,25 @@ export async function generatePack({
       projectId: loaded.project.projectId,
       eventType: "pack_generated",
       actor: "system",
-      payload: { task, matchedMemoryIds: memories.map((memory) => memory.id) }
+      payload: { task, matchedMemoryIds }
     });
+
+    if (sessionId) {
+      writeProtocolReceipt(loaded, {
+        sessionId,
+        receiptType: "pack_loaded",
+        payload: {
+          task,
+          matchedMemoryIds,
+          memoryCount: matchedMemoryIds.length
+        }
+      });
+    }
 
     return {
       markdown,
-      matchedMemoryIds: memories.map((memory) => memory.id)
+      matchedMemoryIds,
+      ...(sessionId ? { sessionId } : {})
     };
   } finally {
     loaded.close();

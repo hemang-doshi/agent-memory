@@ -9,7 +9,7 @@ export async function markMemoryStale({
   memoryId: string;
   reason: string;
 }): Promise<void> {
-  const loaded = await loadProject(cwd, false);
+  const loaded = await loadProject(cwd);
 
   try {
     const memory = loaded.repo.getMemory(memoryId);
@@ -20,8 +20,7 @@ export async function markMemoryStale({
     memory.status = "stale";
     memory.updatedAt = new Date().toISOString();
     memory.metadata = { ...memory.metadata, staleReason: reason };
-    loaded.repo.updateMemory(memory);
-    loaded.repo.insertEvent({
+    loaded.repo.updateMemoryWithEvent(memory, {
       projectId: loaded.project.projectId,
       eventType: "memory_marked_stale",
       actor: "user",
