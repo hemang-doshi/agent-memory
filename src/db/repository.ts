@@ -203,6 +203,14 @@ export class AgentMemoryRepository {
     return row ? this.mapMemory(row) : null;
   }
 
+  getEvent(eventId: string): EventRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM events WHERE event_id = ? LIMIT 1")
+      .get(eventId) as Record<string, unknown> | undefined;
+
+    return row ? this.mapEvent(row) : null;
+  }
+
   insertEvent(input: Omit<EventRecord, "eventId" | "timestamp"> & { eventId?: string; timestamp?: string }): EventRecord {
     const event: EventRecord = {
       eventId: input.eventId ?? `evt_${randomUUID().replaceAll("-", "").slice(0, 10)}`,
@@ -361,9 +369,9 @@ export class AgentMemoryRepository {
       .prepare(
         `INSERT INTO memory_candidates (
           candidate_id, project_id, session_id, type, content, scope, source,
-          confidence, severity, evidence, candidate_status, proposed_by,
+          confidence, severity, evidence, evidence_event_ids_json, candidate_status, proposed_by,
           created_at, reviewed_at, review_reason, target_memory_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         candidate.candidateId,
@@ -376,6 +384,7 @@ export class AgentMemoryRepository {
         candidate.confidence,
         candidate.severity,
         candidate.evidence,
+        stringifyJson(candidate.evidenceEventIds),
         candidate.candidateStatus,
         candidate.proposedBy,
         candidate.createdAt,
@@ -406,6 +415,7 @@ export class AgentMemoryRepository {
           confidence = ?,
           severity = ?,
           evidence = ?,
+          evidence_event_ids_json = ?,
           candidate_status = ?,
           proposed_by = ?,
           created_at = ?,
@@ -424,6 +434,7 @@ export class AgentMemoryRepository {
         candidate.confidence,
         candidate.severity,
         candidate.evidence,
+        stringifyJson(candidate.evidenceEventIds),
         candidate.candidateStatus,
         candidate.proposedBy,
         candidate.createdAt,
@@ -572,6 +583,11 @@ export class AgentMemoryRepository {
       confidence: String(row.confidence) as MemoryCandidateRecord["confidence"],
       severity: String(row.severity) as MemoryCandidateRecord["severity"],
       evidence: String(row.evidence),
+      evidenceEventIds: parseJson(
+        row.evidence_event_ids_json,
+        [],
+        "memory_candidates.evidence_event_ids_json"
+      ),
       candidateStatus: String(row.candidate_status) as MemoryCandidateRecord["candidateStatus"],
       proposedBy: String(row.proposed_by) as MemoryCandidateRecord["proposedBy"],
       createdAt: String(row.created_at),

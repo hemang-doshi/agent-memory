@@ -2,6 +2,7 @@ import {
   CONFIDENCE_LEVELS,
   CANDIDATE_STATUSES,
   CANDIDATE_TYPES,
+  EVIDENCE_EVENT_TYPES,
   MEMORY_SCOPES,
   MEMORY_SOURCES,
   MEMORY_STATUSES,
@@ -11,6 +12,7 @@ import {
   type CandidateType,
   type CandidateStatus,
   type ConfidenceLevel,
+  type EvidenceEventType,
   type MemoryScope,
   type MemorySource,
   type MemoryStatus,
@@ -64,6 +66,10 @@ export function parseCandidateType(value: unknown): CandidateType {
 
 export function parseCandidateStatus(value: unknown): CandidateStatus {
   return parseEnum(value, CANDIDATE_STATUSES, "candidate status");
+}
+
+export function parseEvidenceEventType(value: unknown): EvidenceEventType {
+  return parseEnum(value, EVIDENCE_EVENT_TYPES, "event type");
 }
 
 export function parseCommandPolicyMatchType(value: unknown): CommandPolicyMatchType {

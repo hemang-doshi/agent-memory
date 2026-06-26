@@ -74,6 +74,28 @@ agentmem candidate reject cand_y --reason "Too task-specific."
 Approved candidates become active memory and can appear in future packs.
 Rejected candidates are retained for audit but are never injected.
 
+## Evidence Events
+
+Events provide auditable source material for memory candidates.
+
+```bash
+agentmem event record \
+  --session ses_x \
+  --type command_result \
+  --command "pnpm typecheck" \
+  --exit-code 1 \
+  --summary "Typecheck failed when JSX children were stored in defineEntry props."
+
+agentmem candidate propose \
+  --session ses_x \
+  --type failed_attempt \
+  --content "Using defineEntry for JSX-child demos fails with JSX children." \
+  --evidence-event evt_x
+```
+
+Candidates can still use `--evidence "..."`, but `--evidence-event`
+preserves stronger provenance.
+
 ## Commands
 
 - `agentmem init [--git-init] [--json]`
@@ -83,6 +105,8 @@ Rejected candidates are retained for audit but are never injected.
 - `agentmem session start "<task>" [--json]`
 - `agentmem session finish --session <session-id> --summary "..." [--json]`
 - `agentmem session receipt --session <session-id> [--json]`
+- `agentmem event record --session <session-id> --type <type> --summary "..." [--command "..."] [--exit-code 1] [--json]`
+- `agentmem event list --session <session-id> [--json]`
 - `agentmem remember "<content>" --type <type>`
 - `agentmem decision "<content>"`
 - `agentmem failed "<content>"`
@@ -90,7 +114,7 @@ Rejected candidates are retained for audit but are never injected.
 - `agentmem pack "<task>" [--session <session-id>] [--json]`
 - `agentmem search "<query>" [--json]`
 - `agentmem preflight --command "<command>" [--session <session-id>] [--json]`
-- `agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." [--json]`
+- `agentmem candidate propose --session <session-id> --type <type> --content "..." [--evidence "..."] [--evidence-event <event-id>] [--json]`
 - `agentmem candidate list [--status proposed] [--json]`
 - `agentmem candidate approve <candidate-id> [--json]`
 - `agentmem candidate reject <candidate-id> --reason "..." [--json]`
