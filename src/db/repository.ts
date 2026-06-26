@@ -385,6 +385,87 @@ export class AgentMemoryRepository {
       );
   }
 
+  getMemoryCandidate(candidateId: string): MemoryCandidateRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM memory_candidates WHERE candidate_id = ? LIMIT 1")
+      .get(candidateId) as Record<string, unknown> | undefined;
+
+    return row ? this.mapMemoryCandidate(row) : null;
+  }
+
+  updateMemoryCandidate(candidate: MemoryCandidateRecord): void {
+    this.db
+      .prepare(
+        `UPDATE memory_candidates SET
+          project_id = ?,
+          session_id = ?,
+          type = ?,
+          content = ?,
+          scope = ?,
+          source = ?,
+          confidence = ?,
+          severity = ?,
+          evidence = ?,
+          candidate_status = ?,
+          proposed_by = ?,
+          created_at = ?,
+          reviewed_at = ?,
+          review_reason = ?,
+          target_memory_id = ?
+        WHERE candidate_id = ?`
+      )
+      .run(
+        candidate.projectId,
+        candidate.sessionId,
+        candidate.type,
+        candidate.content,
+        candidate.scope,
+        candidate.source,
+        candidate.confidence,
+        candidate.severity,
+        candidate.evidence,
+        candidate.candidateStatus,
+        candidate.proposedBy,
+        candidate.createdAt,
+        candidate.reviewedAt,
+        candidate.reviewReason,
+        candidate.targetMemoryId,
+        candidate.candidateId
+      );
+  }
+
+  approveCandidateWithMemory(input: {
+    candidate: MemoryCandidateRecord;
+    memory: MemoryRecord;
+    receipt: {
+      projectId: string;
+      sessionId?: string | null;
+      receiptType: "candidate_reviewed";
+      payload: JsonRecord;
+    };
+  }): void {
+    this.transaction(() => {
+      this.insertMemory(input.memory);
+      this.updateMemoryCandidate(input.candidate);
+      this.insertProtocolReceipt(input.receipt);
+    });
+  }
+
+  rejectCandidateWithReceipt(input: {
+    candidate: MemoryCandidateRecord;
+    receipt: {
+      projectId: string;
+      sessionId?: string | null;
+      receiptType: "candidate_reviewed";
+      payload: JsonRecord;
+    };
+  }): void {
+    this.transaction(() => {
+      this.updateMemoryCandidate(input.candidate);
+      this.insertProtocolReceipt(input.receipt);
+    });
+  }
+
   listMemoryCandidates(projectId: string, status?: string): MemoryCandidateRecord[] {
     const rows = status
       ? (this.db

@@ -13,6 +13,7 @@ export interface SessionReceiptSummary {
   warningsTriggered: number;
   blocksTriggered: number;
   candidatesProposed: number;
+  candidatesReviewed: number;
   sessionFinished: boolean;
   receipts: Array<{
     type: string;
@@ -54,6 +55,7 @@ export function summarizeSessionReceipts({
     warningsTriggered: receipts.filter((receipt) => receipt.receiptType === "warning_triggered").length,
     blocksTriggered: receipts.filter((receipt) => receipt.receiptType === "block_triggered").length,
     candidatesProposed: receipts.filter((receipt) => receipt.receiptType === "candidate_proposed").length,
+    candidatesReviewed: receipts.filter((receipt) => receipt.receiptType === "candidate_reviewed").length,
     sessionFinished: receipts.some((receipt) => receipt.receiptType === "session_finished"),
     receipts: receipts.map((receipt) => ({
       type: receipt.receiptType,

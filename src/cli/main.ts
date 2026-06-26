@@ -7,8 +7,11 @@ import { explainMemory } from "../core/explain-memory.js";
 import { generatePack } from "../core/generate-pack.js";
 import { initProject } from "../core/init-project.js";
 import { installInstructions } from "../core/install-instructions.js";
+import { approveCandidate } from "../core/candidate-approve.js";
 import { listCandidates } from "../core/candidate-list.js";
+import { rejectCandidate } from "../core/candidate-reject.js";
 import { listMemories } from "../core/list-memories.js";
+import { formatManagePlanText, getManagePlan } from "../core/manage-plan.js";
 import { markMemoryStale } from "../core/mark-memory-stale.js";
 import { preflightCommand } from "../core/preflight-command.js";
 import { searchMemories } from "../core/search-memories.js";
@@ -97,6 +100,9 @@ function helpText(): string {
     "  agentmem preflight --command <command> [--session <session-id>] [--json]",
     "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" --evidence \"...\" [--json]",
     "  agentmem candidate list [--status proposed] [--json]",
+    "  agentmem candidate approve <candidate-id> [--json]",
+    "  agentmem candidate reject <candidate-id> --reason \"...\" [--json]",
+    "  agentmem manage --plan [--json]",
     "  agentmem search <query> [--type <type>] [--json]",
     "  agentmem list [--type <type>] [--all] [--json]",
     "  agentmem stale <memory-id> --reason <reason>",
@@ -296,7 +302,72 @@ async function main(): Promise<void> {
         return;
       }
 
+      if (subcommand === "approve") {
+        const candidateId = parsed.positionals[1];
+        if (!candidateId) {
+          throw new Error("candidate approve requires a candidate id");
+        }
+
+        const result = await approveCandidate({ cwd, candidateId });
+        render(
+          asJson
+            ? {
+                candidate: {
+                  candidateId: result.candidate.candidateId,
+                  candidateStatus: result.candidate.candidateStatus,
+                  targetMemoryId: result.candidate.targetMemoryId
+                },
+                memory: {
+                  id: result.memory.id,
+                  type: result.memory.type,
+                  status: result.memory.status,
+                  content: result.memory.content
+                }
+              }
+            : `Approved ${result.candidate.candidateId} as ${result.memory.id}.`,
+          asJson
+        );
+        return;
+      }
+
+      if (subcommand === "reject") {
+        const candidateId = parsed.positionals[1];
+        if (!candidateId) {
+          throw new Error("candidate reject requires a candidate id");
+        }
+
+        const result = await rejectCandidate({
+          cwd,
+          candidateId,
+          reason: requireOption(parsed, "reason")
+        });
+        render(
+          asJson
+            ? {
+                candidateId: result.candidateId,
+                candidateStatus: result.candidateStatus,
+                reviewReason: result.reviewReason
+              }
+            : `Rejected ${result.candidateId}.`,
+          asJson
+        );
+        return;
+      }
+
       throw new Error("Unknown candidate command. Run `agentmem help` for usage.");
+    }
+    case "manage": {
+      if (parsed.positionals.length > 0) {
+        throw new Error("Unknown manage command. Run `agentmem help` for usage.");
+      }
+
+      if (!parsed.options.plan) {
+        throw new Error("manage currently supports only --plan");
+      }
+
+      const result = await getManagePlan({ cwd });
+      render(asJson ? result : formatManagePlanText(result), asJson);
+      return;
     }
     case "pack": {
       const task = parsed.positionals.join(" ").trim();
