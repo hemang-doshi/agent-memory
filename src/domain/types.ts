@@ -211,6 +211,38 @@ export interface ProtocolStartResult {
   nextSteps: string[];
 }
 
+export interface DogfoodReport {
+  sessionId: string;
+  task: string;
+  status: "active" | "finished";
+  protocol: {
+    compliant: boolean;
+    missingCheckpoints: string[];
+    required: {
+      sessionStarted: boolean;
+      packLoaded: boolean;
+      sessionFinished: boolean;
+    };
+  };
+  activity: {
+    memoriesInjected: string[];
+    preflightChecks: number;
+    warningsTriggered: number;
+    blocksTriggered: number;
+    eventsRecorded: number;
+    candidatesProposed: number;
+    candidatesReviewed: number;
+  };
+  signals: {
+    memoryUsed: boolean;
+    preflightUsed: boolean;
+    evidenceCaptured: boolean;
+    learningCaptured: boolean;
+    reviewHappened: boolean;
+  };
+  notes: string[];
+}
+
 export interface MemoryCandidateRecord {
   candidateId: string;
   projectId: string;

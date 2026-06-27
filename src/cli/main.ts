@@ -12,6 +12,7 @@ import { formatBenchmarkReport } from "../core/benchmark/format-benchmark.js";
 import { runBenchmarkFixturePath, runProtocolBenchmarks } from "../core/benchmark/run-benchmarks.js";
 import { listCandidates } from "../core/candidate-list.js";
 import { rejectCandidate } from "../core/candidate-reject.js";
+import { getDogfoodReport } from "../core/dogfood-report.js";
 import { listEvidenceEvents } from "../core/list-events.js";
 import { listMemories } from "../core/list-memories.js";
 import { formatManagePlanText, getManagePlan } from "../core/manage-plan.js";
@@ -27,6 +28,7 @@ import { startSession } from "../core/session-start.js";
 import { proposeCandidate } from "../core/candidate-propose.js";
 import { uninstallInstructions } from "../core/uninstall-instructions.js";
 import { formatTextList, formatTextPreflight } from "../formatters/output.js";
+import { formatDogfoodReport } from "../formatters/dogfood-report.js";
 import { formatProtocolCompliance } from "../formatters/protocol-check.js";
 import { formatProtocolStart } from "../formatters/protocol-start.js";
 import type { CreateMemoryInput, MemoryRecord } from "../domain/types.js";
@@ -120,6 +122,7 @@ function helpText(): string {
     "  agentmem session receipt --session <session-id> [--json]",
     "  agentmem protocol start \"<task>\" [--json]",
     "  agentmem protocol check --session <session-id> [--json]",
+    "  agentmem dogfood report --session <session-id> [--json]",
     "  agentmem event record --session <session-id> --type <type> --summary \"...\" [--command \"...\"] [--exit-code 1] [--json]",
     "  agentmem event list --session <session-id> [--json]",
     "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]",
@@ -324,6 +327,19 @@ async function main(): Promise<void> {
       }
 
       throw new Error("Unknown protocol command. Run `agentmem help` for usage.");
+    }
+    case "dogfood": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "report") {
+        const result = await getDogfoodReport({
+          cwd,
+          sessionId: requireOption(parsed, "session")
+        });
+        render(asJson ? result : formatDogfoodReport(result), asJson);
+        return;
+      }
+
+      throw new Error("Unknown dogfood command. Run `agentmem help` for usage.");
     }
     case "event": {
       const subcommand = parsed.positionals[0];
