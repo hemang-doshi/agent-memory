@@ -45,6 +45,12 @@ export async function scanForSecrets({ cwd }: { cwd: string }): Promise<ScanResu
           findings.push({ source: "memory", id: memory.id, field: "summary", label });
         }
       }
+      const metadataStr = JSON.stringify(memory.metadata);
+      for (const { pattern, label } of SECRET_PATTERNS) {
+        if (pattern.test(metadataStr)) {
+          findings.push({ source: "memory", id: memory.id, field: "metadata", label });
+        }
+      }
     }
 
     const events = loaded.repo.listEvents(loaded.project.projectId);
@@ -65,6 +71,12 @@ export async function scanForSecrets({ cwd }: { cwd: string }): Promise<ScanResu
         }
         if (pattern.test(candidate.evidence)) {
           findings.push({ source: "candidate", id: candidate.candidateId, field: "evidence", label });
+        }
+      }
+      const metadataStr = JSON.stringify(candidate.metadata);
+      for (const { pattern, label } of SECRET_PATTERNS) {
+        if (pattern.test(metadataStr)) {
+          findings.push({ source: "candidate", id: candidate.candidateId, field: "metadata", label });
         }
       }
     }

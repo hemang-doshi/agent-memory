@@ -86,26 +86,43 @@ export function validateRegexPattern(pattern: string): void {
   }
 }
 
-export function assertNoObviousSecret(value: string): void {
-  const patterns = [
-    /\bapi[_-]?key\s*[=:]\s*["']?[A-Za-z0-9_\-+/=]{20,}/i,
-    /\bsecret\s*[=:]/i,
-    /\bpassword\s*[=:]/i,
-    /\btoken\s*[=:]/i,
-    /\bBearer\s+ey[A-Za-z0-9_-]+/i,
-    /\bsk-[A-Za-z0-9_-]+/,
-    /\bAKIA[0-9A-Z]{16}\b/,
-    /\bghp_[A-Za-z0-9]{36}\b/,
-    /\bgho_[A-Za-z0-9]{36}\b/,
-    /\bghu_[A-Za-z0-9]{36}\b/,
-    /\bxox[bprs]-[A-Za-z0-9-]+\b/,
-    /-----BEGIN\s+(?:RSA|EC|DSA|OPENSSH)\s+PRIVATE KEY-----/,
-    /AIza[0-9A-Za-z\-_]{35,}\b/,
-    /\b(?:postgres|mysql|mongodb):\/\/[^:]+:[^@\s]+@/i
-  ];
+const SECRET_PATTERNS = [
+  /\bapi[_-]?key\s*[=:]\s*["']?[A-Za-z0-9_\-+/=]{20,}/i,
+  /\bsecret\s*[=:]/i,
+  /\bpassword\s*[=:]/i,
+  /\btoken\s*[=:]/i,
+  /\bBearer\s+ey[A-Za-z0-9_-]+/i,
+  /\bsk-[A-Za-z0-9_-]+/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bghp_[A-Za-z0-9]{36}\b/,
+  /\bgho_[A-Za-z0-9]{36}\b/,
+  /\bghu_[A-Za-z0-9]{36}\b/,
+  /\bxox[bprs]-[A-Za-z0-9-]+\b/,
+  /-----BEGIN\s+(?:RSA|EC|DSA|OPENSSH)\s+PRIVATE KEY-----/,
+  /AIza[0-9A-Za-z\-_]{35,}\b/,
+  /\b(?:postgres|mysql|mongodb):\/\/[^:]+:[^@\s]+@/i
+];
 
-  if (patterns.some((pattern) => pattern.test(value))) {
+function hasObviousSecret(value: string): boolean {
+  return SECRET_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+export function assertNoObviousSecret(value: string): void {
+  if (hasObviousSecret(value)) {
     throw new Error("Candidate rejected by hygiene check: possible secret detected.");
+  }
+}
+
+export function assertNoObviousSecretInUnknown(value: unknown, label: string): void {
+  if (typeof value === "string") {
+    if (hasObviousSecret(value)) {
+      throw new Error(`Candidate rejected by hygiene check: possible secret detected in ${label}.`);
+    }
+  } else if (typeof value === "object" && value !== null) {
+    const serialized = JSON.stringify(value);
+    if (hasObviousSecret(serialized)) {
+      throw new Error(`Candidate rejected by hygiene check: possible secret detected in ${label}.`);
+    }
   }
 }
 

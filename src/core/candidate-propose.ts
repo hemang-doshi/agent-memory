@@ -1,5 +1,5 @@
 import type { CandidateType, MemoryCandidateRecord } from "../domain/types.js";
-import { assertNoObviousSecret } from "../domain/validators.js";
+import { assertNoObviousSecret, assertNoObviousSecretInUnknown } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
 import { eventSummary, isEvidenceEventType } from "./evidence-events.js";
@@ -33,6 +33,9 @@ export async function proposeCandidate({
   }
 
   assertNoObviousSecret(content);
+  if (metadata) {
+    assertNoObviousSecretInUnknown(metadata, "metadata");
+  }
 
   const loaded = await loadProject(cwd);
 

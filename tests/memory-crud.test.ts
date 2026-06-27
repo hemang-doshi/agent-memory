@@ -220,4 +220,41 @@ describe("memory CRUD", () => {
       })
     ).rejects.toThrow("Missing required command policy metadata: commandPattern");
   });
+
+  test("createMemory rejects secrets in metadata", async () => {
+    const cwd = await createTempWorkspace("agentmem-meta-secret");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    await expect(
+      createMemory({
+        cwd,
+        content: "Use this API carefully.",
+        type: "command_policy",
+        source: "cli",
+        metadata: {
+          commandPattern: "curl",
+          matchType: "substring",
+          decision: "warn",
+          suggestedAction: "Use token=abc123 for auth."
+        }
+      })
+    ).rejects.toThrow("possible secret detected in metadata");
+  });
+
+  test("createMemory rejects secrets in summary", async () => {
+    const cwd = await createTempWorkspace("agentmem-summary-secret");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    await expect(
+      createMemory({
+        cwd,
+        content: "Normal content.",
+        type: "decision",
+        source: "cli",
+        summary: "Setup with token=secret-value."
+      })
+    ).rejects.toThrow("Candidate rejected by hygiene check: possible secret detected.");
+  });
 });

@@ -12,6 +12,7 @@ import {
   parsePreflightDecision,
   parseSeverityLevel,
   assertNoObviousSecret,
+  assertNoObviousSecretInUnknown,
   validateRegexPattern,
   validateMemoryRecordForType
 } from "../domain/validators.js";
@@ -20,6 +21,22 @@ import { loadProject } from "./context.js";
 
 export async function createMemory(input: CreateMemoryInput): Promise<MemoryRecord> {
   assertNoObviousSecret(input.content);
+  if (input.summary) {
+    assertNoObviousSecret(input.summary);
+  }
+  if (input.paths) {
+    for (const path of input.paths) {
+      assertNoObviousSecret(path);
+    }
+  }
+  if (input.tags) {
+    for (const tag of input.tags) {
+      assertNoObviousSecret(tag);
+    }
+  }
+  if (input.metadata) {
+    assertNoObviousSecretInUnknown(input.metadata, "metadata");
+  }
   const loaded = await loadProject(input.cwd);
 
   try {
