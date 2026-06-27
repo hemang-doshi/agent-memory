@@ -177,6 +177,30 @@ export interface ProtocolReceiptRecord {
   createdAt: string;
 }
 
+export interface ProtocolComplianceReport {
+  sessionId: string;
+  task: string;
+  status: "active" | "finished";
+  compliant: boolean;
+  required: {
+    sessionStarted: boolean;
+    packLoaded: boolean;
+    sessionFinished: boolean;
+  };
+  activity: {
+    memoriesInjected: string[];
+    preflightChecks: number;
+    warningsTriggered: number;
+    blocksTriggered: number;
+    eventsRecorded: number;
+    candidatesProposed: number;
+    candidatesReviewed: number;
+  };
+  receiptTypes: string[];
+  missingCheckpoints: string[];
+  notes: string[];
+}
+
 export interface MemoryCandidateRecord {
   candidateId: string;
   projectId: string;
