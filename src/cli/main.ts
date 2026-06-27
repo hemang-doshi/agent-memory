@@ -17,6 +17,7 @@ import { listMemories } from "../core/list-memories.js";
 import { formatManagePlanText, getManagePlan } from "../core/manage-plan.js";
 import { markMemoryStale } from "../core/mark-memory-stale.js";
 import { preflightCommand } from "../core/preflight-command.js";
+import { checkProtocolCompliance } from "../core/protocol-check.js";
 import { recordEvidenceEvent } from "../core/record-event.js";
 import { searchMemories } from "../core/search-memories.js";
 import { finishSession } from "../core/session-finish.js";
@@ -25,6 +26,7 @@ import { startSession } from "../core/session-start.js";
 import { proposeCandidate } from "../core/candidate-propose.js";
 import { uninstallInstructions } from "../core/uninstall-instructions.js";
 import { formatTextList, formatTextPreflight } from "../formatters/output.js";
+import { formatProtocolCompliance } from "../formatters/protocol-check.js";
 import type { CreateMemoryInput, MemoryRecord } from "../domain/types.js";
 import {
   parseCandidateStatus,
@@ -114,6 +116,7 @@ function helpText(): string {
     "  agentmem session start \"<task>\" [--json]",
     "  agentmem session finish --session <session-id> --summary \"...\" [--json]",
     "  agentmem session receipt --session <session-id> [--json]",
+    "  agentmem protocol check --session <session-id> [--json]",
     "  agentmem event record --session <session-id> --type <type> --summary \"...\" [--command \"...\"] [--exit-code 1] [--json]",
     "  agentmem event list --session <session-id> [--json]",
     "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]",
@@ -294,6 +297,19 @@ async function main(): Promise<void> {
       }
 
       throw new Error("Unknown session command. Run `agentmem help` for usage.");
+    }
+    case "protocol": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "check") {
+        const result = await checkProtocolCompliance({
+          cwd,
+          sessionId: requireOption(parsed, "session")
+        });
+        render(asJson ? result : formatProtocolCompliance(result), asJson);
+        return;
+      }
+
+      throw new Error("Unknown protocol command. Run `agentmem help` for usage.");
     }
     case "event": {
       const subcommand = parsed.positionals[0];

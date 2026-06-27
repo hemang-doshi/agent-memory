@@ -59,6 +59,24 @@ pnpm cli session receipt --session "$SESSION" --json
 self-reporting. Candidate proposals are stored as untrusted
 `memory_candidates` records and do not create trusted durable memories.
 
+## Protocol Compliance
+
+Check whether a memory-aware session followed the required protocol:
+
+```bash
+agentmem protocol check --session ses_x
+agentmem protocol check --session ses_x --json
+```
+
+A compliant minimal session has:
+
+- `session_started`
+- `pack_loaded`
+- `session_finished`
+
+Preflights, events, and candidates are reported as activity but are not
+required for every task.
+
 ## Candidate Review
 
 Agents can propose memory candidates, but candidates are untrusted until
@@ -119,6 +137,7 @@ project's `.agent-memory` database.
 - `agentmem session start "<task>" [--json]`
 - `agentmem session finish --session <session-id> --summary "..." [--json]`
 - `agentmem session receipt --session <session-id> [--json]`
+- `agentmem protocol check --session <session-id> [--json]`
 - `agentmem event record --session <session-id> --type <type> --summary "..." [--command "..."] [--exit-code 1] [--json]`
 - `agentmem event list --session <session-id> [--json]`
 - `agentmem remember "<content>" --type <type>`
