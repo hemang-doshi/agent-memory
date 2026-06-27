@@ -26,6 +26,12 @@ jobs:
         run: |
           pnpm cli --help
           node dist/cli/main.js --help
+      - name: Built CLI eval
+        run: node dist/cli/main.js eval --json
+      - name: Protocol benchmarks
+        run: pnpm cli benchmark run --all --json
+      - name: Git whitespace check
+        run: git diff --check
       - name: Validate npm package contents
         run: |
           PACK_JSON="$(npm pack --dry-run --json)"

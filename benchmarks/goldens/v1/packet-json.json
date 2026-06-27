@@ -18,7 +18,8 @@
           "paths": [],
           "tags": ["v1-eval"],
           "confidence": "high",
-          "source": "user_explicit"
+          "source": "user_explicit",
+          "severity": "high"
         }
       ]
     },
@@ -34,7 +35,8 @@
           "paths": [],
           "tags": ["v1-eval", "vitest"],
           "confidence": "high",
-          "source": "user_explicit"
+          "source": "user_explicit",
+          "severity": "medium"
         }
       ]
     },
@@ -50,7 +52,8 @@
           "paths": [],
           "tags": ["v1-eval", "llm"],
           "confidence": "high",
-          "source": "agent_reported"
+          "source": "agent_reported",
+          "severity": "medium"
         }
       ]
     }

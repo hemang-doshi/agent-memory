@@ -1,5 +1,5 @@
 import type { MemoryCandidateRecord, MemoryRecord } from "../domain/types.js";
-import { assertNoObviousSecret } from "../domain/validators.js";
+import { assertNoObviousSecret, validateMemoryRecordForType } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
 import { shortId } from "./protocol-receipts.js";
@@ -33,12 +33,6 @@ export async function approveCandidate({
     }
 
     requireProposedCandidate(existing);
-    if (existing.type === "command_policy") {
-      throw new Error(
-        "Cannot approve command_policy candidates yet: commandPattern metadata is required."
-      );
-    }
-
     assertNoObviousSecret(existing.content);
     assertNoObviousSecret(existing.evidence);
 
@@ -74,9 +68,12 @@ export async function approveCandidate({
         candidateId: existing.candidateId,
         evidence: existing.evidence,
         evidenceEventIds: existing.evidenceEventIds,
-        approvedFromCandidate: true
+        approvedFromCandidate: true,
+        ...(existing.metadata ?? {})
       }
     };
+
+    validateMemoryRecordForType(memory);
 
     const candidate: MemoryCandidateRecord = {
       ...existing,

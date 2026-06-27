@@ -169,7 +169,7 @@ describe("retrieval and preflight", () => {
     }
 
     const result = await preflightCommand({ cwd, command: "npm run render" });
-    expect(result.decision).toBe("allow");
+    expect(result.decision).toBe("warn");
     expect(result.matchedMemoryIds).toEqual([]);
   });
 
@@ -207,7 +207,7 @@ describe("retrieval and preflight", () => {
     }
 
     const result = await preflightCommand({ cwd, command: "npm install zod" });
-    expect(result.decision).toBe("allow");
+    expect(result.decision).toBe("warn");
     expect(result.matchedMemoryIds).toEqual([]);
   });
 
@@ -291,7 +291,7 @@ describe("retrieval and preflight", () => {
     db.close();
 
     const result = await preflightCommand({ cwd, command: "npm run render" });
-    expect(result.decision).toBe("allow");
+    expect(result.decision).toBe("warn");
   });
 
   test("preflight disabled returns allow without policy checks", async () => {
@@ -548,5 +548,25 @@ describe("retrieval and preflight", () => {
     for (const type of MEMORY_TYPES) {
       expect(pack.markdown).toContain(`shared-token content for ${type}`);
     }
+  });
+
+  test("preflight respects configured default_decision when no policy matches", async () => {
+    const cwd = await createTempWorkspace("agentmem-preflight-default-decision");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    // Default config default_decision is "warn" — verify warn
+    let result = await preflightCommand({ cwd, command: "npm run test" });
+    expect(result.decision).toBe("warn");
+    expect(result.reason).toContain("warn");
+
+    // Change to "allow" via config
+    writeFileSync(
+      `${cwd}/.agent-memory/config.json`,
+      JSON.stringify({ preflight: { default_decision: "allow" } })
+    );
+    result = await preflightCommand({ cwd, command: "npm run test" });
+    expect(result.decision).toBe("allow");
+    expect(result.reason).toContain("allow");
   });
 });

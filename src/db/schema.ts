@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
   created_at TEXT NOT NULL,
   reviewed_at TEXT,
   review_reason TEXT,
-  target_memory_id TEXT
+  target_memory_id TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_project_created

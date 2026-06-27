@@ -179,8 +179,10 @@ export function loadConfig(configPath: string): ProjectConfig {
         ? DEFAULT_PROJECT_CONFIG.default_scope
         : parseMemoryScope(raw.default_scope),
     preflight: {
-      ...DEFAULT_PROJECT_CONFIG.preflight,
-      ...rawPreflight,
+      enabled:
+        (rawPreflight as Partial<ProjectConfig["preflight"]>).enabled === undefined
+          ? DEFAULT_PROJECT_CONFIG.preflight.enabled
+          : Boolean((rawPreflight as Partial<ProjectConfig["preflight"]>).enabled),
       default_decision:
         (rawPreflight as Partial<ProjectConfig["preflight"]>).default_decision === undefined
           ? DEFAULT_PROJECT_CONFIG.preflight.default_decision

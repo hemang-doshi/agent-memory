@@ -12,35 +12,37 @@ import {
   parsePreflightDecision,
   parseSeverityLevel,
   assertNoObviousSecret,
-  validateRegexPattern
+  assertNoObviousSecretInUnknown,
+  validateRegexPattern,
+  validateMemoryRecordForType
 } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
 
-function validateCommandPolicyMetadata(metadata: Record<string, unknown>): void {
-  const commandPattern = metadata.commandPattern;
-  if (typeof commandPattern !== "string" || commandPattern.trim().length === 0) {
-    throw new Error("Missing required command policy metadata: commandPattern");
-  }
-
-  const matchType = parseCommandPolicyMatchType(metadata.matchType ?? "substring");
-  parsePreflightDecision(metadata.decision ?? "warn");
-  if (matchType === "regex") {
-    validateRegexPattern(commandPattern);
-  }
-}
-
 export async function createMemory(input: CreateMemoryInput): Promise<MemoryRecord> {
   assertNoObviousSecret(input.content);
+  if (input.summary) {
+    assertNoObviousSecret(input.summary);
+  }
+  if (input.paths) {
+    for (const path of input.paths) {
+      assertNoObviousSecret(path);
+    }
+  }
+  if (input.tags) {
+    for (const tag of input.tags) {
+      assertNoObviousSecret(tag);
+    }
+  }
+  if (input.metadata) {
+    assertNoObviousSecretInUnknown(input.metadata, "metadata");
+  }
   const loaded = await loadProject(input.cwd);
 
   try {
     const now = new Date().toISOString();
     const type = parseMemoryType(input.type);
     const metadata = input.metadata ?? {};
-    if (type === "command_policy") {
-      validateCommandPolicyMetadata(metadata);
-    }
 
     const memory: MemoryRecord = {
       id: `mem_${randomUUID().replaceAll("-", "").slice(0, 10)}`,
@@ -71,6 +73,8 @@ export async function createMemory(input: CreateMemoryInput): Promise<MemoryReco
       redactionStatus: input.redactionStatus ?? "none",
       metadata
     };
+
+    validateMemoryRecordForType(memory);
 
     loaded.repo.createMemoryWithEvent(memory, {
       projectId: loaded.project.projectId,

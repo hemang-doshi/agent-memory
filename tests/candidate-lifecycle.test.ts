@@ -197,4 +197,27 @@ describe("candidate lifecycle", () => {
     const proposed = await listCandidates({ cwd, status: "proposed" });
     expect(proposed).toHaveLength(2);
   });
+
+  test("candidate proposal rejects secrets in metadata", async () => {
+    const cwd = await createTempWorkspace("agentmem-candidate-meta-secret");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+    const session = await startSession({ cwd, task: "Meta secret candidate" });
+
+    await expect(
+      proposeCandidate({
+        cwd,
+        sessionId: session.sessionId,
+        type: "command_policy",
+        content: "Block unsafe deploy.",
+        evidence: "Observed in failed deploy.",
+        metadata: {
+          commandPattern: "deploy",
+          matchType: "substring",
+          decision: "block",
+          suggestedAction: "Use token=abc123 for auth."
+        }
+      })
+    ).rejects.toThrow("possible secret detected in metadata");
+  });
 });

@@ -274,7 +274,6 @@ agentmem retrieve <task> [--file <path>] [--command <command>] [--json]
 agentmem inject <task> [--session <session-id>] [--file <path>] [--command <command>] [--json|--format markdown]
 agentmem pack <task> [--session <session-id>] [--json]
 agentmem preflight --command <command> [--session <session-id>] [--json]
-agentmem event record --type <type> --summary "..." [--session <session-id>] [--json]
 agentmem eval [--json]
 agentmem candidate propose --session <session-id> --type <type> --content "..." [--evidence "..."] [--evidence-event <event-id>] [--json]
 agentmem candidate list [--status proposed] [--json]
@@ -392,6 +391,6 @@ pnpm cli eval --json
 
 ## Current V1 Release Status
 
-This branch contains the V1 implementation and release-hardening work. The README documents the current CLI behavior visible in this branch, including deterministic evals, package metadata hardening, and CI templates. Final release status is recorded in `docs/v1-release/V1_RELEASE_VERIFICATION.md`.
+Agent Memory V1.0 is the current release. The README documents the current CLI behavior, including deterministic evals, package metadata hardening, and CI templates. Final release status is recorded in `docs/v1-release/V1_RELEASE_VERIFICATION.md`.
 
 See [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/testing.md), and [docs/v1-release/V1_RELEASE_NOTES_DRAFT.md](docs/v1-release/V1_RELEASE_NOTES_DRAFT.md) for release documentation.

@@ -1,5 +1,5 @@
 import type { MemoryRecord, MemoryStatus, MemoryType } from "../domain/types.js";
-import { assertNoObviousSecret } from "../domain/validators.js";
+import { assertNoObviousSecret, validateMemoryRecordForType } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
 
@@ -72,6 +72,7 @@ export async function updateMemory({
     }
 
     memory.updatedAt = new Date().toISOString();
+    validateMemoryRecordForType(memory);
     loaded.repo.updateMemoryWithEvent(memory, {
       projectId: loaded.project.projectId,
       eventType: "memory_updated",

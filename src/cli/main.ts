@@ -25,6 +25,7 @@ import { recordEvidenceEvent } from "../core/record-event.js";
 import { retrieveMemories } from "../core/retrieve-memories.js";
 import { runV1Evals } from "../core/run-evals.js";
 import { searchMemories } from "../core/search-memories.js";
+import { scanForSecrets } from "../core/scan-secrets.js";
 import { finishSession } from "../core/session-finish.js";
 import { formatSessionReceiptText, getSessionReceipt } from "../core/session-receipt.js";
 import { startSession } from "../core/session-start.js";
@@ -192,6 +193,7 @@ function helpText(): string {
     "  agentmem forget <memory-id> --reason <reason>",
     "  agentmem stale <memory-id> --reason <reason>",
     "  agentmem explain <memory-id>",
+    "  agentmem scan [--json]",
     ""
   ].join("\n");
 }
@@ -442,13 +444,28 @@ async function main(): Promise<void> {
     case "candidate": {
       const subcommand = parsed.positionals[0];
       if (subcommand === "propose") {
+        const candidateType = parseCandidateType(requireOption(parsed, "type"));
+        const metadata: Record<string, unknown> = {};
+        if (candidateType === "command_policy") {
+          const match = optionalString(parsed, "match");
+          if (match) {
+            metadata.commandPattern = match;
+            metadata.matchType = optionalString(parsed, "match-type") ?? "substring";
+            metadata.decision = optionalString(parsed, "decision") ?? "warn";
+            const suggest = optionalString(parsed, "suggest");
+            if (suggest) {
+              metadata.suggestedAction = suggest;
+            }
+          }
+        }
         const result = await proposeCandidate({
           cwd,
           sessionId: requireOption(parsed, "session"),
-          type: parseCandidateType(requireOption(parsed, "type")),
+          type: candidateType,
           content: requireOption(parsed, "content"),
           evidence: optionalString(parsed, "evidence"),
-          evidenceEventId: optionalString(parsed, "evidence-event")
+          evidenceEventId: optionalString(parsed, "evidence-event"),
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined
         });
         render(asJson ? result : `Proposed ${result.candidateId}.`, asJson);
         return;
@@ -712,6 +729,22 @@ async function main(): Promise<void> {
           : `${result.memory.content}\nstatus: ${result.memory.status}\nrelated_events: ${result.relatedEvents.length}`,
         asJson
       );
+      return;
+    }
+    case "scan": {
+      const result = await scanForSecrets({ cwd });
+      if (asJson) {
+        render(result, true);
+      } else {
+        if (result.findings.length === 0) {
+          render(result.summary, false);
+        } else {
+          const lines = result.findings.map(
+            (finding) => `[${finding.source}] ${finding.id} ${finding.field}: ${finding.label}`
+          );
+          render([...lines, "", result.summary].join("\n"), false);
+        }
+      }
       return;
     }
     default:
