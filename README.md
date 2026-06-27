@@ -56,6 +56,28 @@ The published package is currently `agent-memory-preflight`; the installed CLI b
 
 For a concrete demo, see [examples/avoid-repeated-mistake](https://github.com/hemang-doshi/agent-memory/tree/main/examples/avoid-repeated-mistake).
 
+## Protocol Spine
+
+The protocol spine adds a local audit trail around the existing memory and preflight workflow. The recommended agent integration path starts the session and loads the memory pack in one command:
+
+```bash
+START=$(pnpm cli protocol start "Implement protocol spine smoke test" --json)
+SESSION=$(printf '%s' "$START" \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
+
+pnpm cli preflight --command "npm run render" --session "$SESSION" --json
+pnpm cli candidate propose \
+  --session "$SESSION" \
+  --type known_fix \
+  --content "Reusable repo-specific lesson." \
+  --evidence "Evidence from the command, test, or user correction." \
+  --json
+pnpm cli session finish --session "$SESSION" --summary "Smoke test complete." --json
+pnpm cli protocol check --session "$SESSION" --json
+```
+
+`protocol check` reads from SQLite protocol receipts, not from agent self-reporting. Candidate proposals are stored as untrusted `memory_candidates` records and do not create trusted durable memories.
+
 ## Agent Workflow
 
 Use memory at natural checkpoints:
@@ -81,6 +103,153 @@ Receipts are written by Agent Memory commands, not by agent self-report. They ca
 
 Use `--evidence-event <event-id>` on `candidate propose` when a candidate should link directly to an event receipt from the same session.
 
+## Agent Router Instructions
+
+Install the Agent Memory router into `AGENTS.md`:
+
+```bash
+agentmem install-instructions
+```
+
+The managed block tells coding agents to:
+
+- start every task with `agentmem protocol start "<task>" --json`
+- use the returned memory pack before planning
+- preflight risky commands
+- record evidence only when meaningful
+- propose candidates only for reusable learning
+- finish the session and run `agentmem protocol check --session <id> --json`
+
+The router is designed to be always memory-aware but rarely noisy. It does not
+ask agents to record trivial events or propose memory for one-off task details.
+
+## Protocol Compliance
+
+Check whether a memory-aware session followed the required protocol:
+
+```bash
+agentmem protocol check --session ses_x
+agentmem protocol check --session ses_x --json
+```
+
+A compliant minimal session has:
+
+- `session_started`
+- `pack_loaded`
+- `session_finished`
+
+Preflights, events, and candidates are reported as activity but are not
+required for every task.
+
+## Protocol Start
+
+Start a memory-aware agent session and load the initial memory pack in one step:
+
+```bash
+agentmem protocol start "Implement feature X"
+agentmem protocol start "Implement feature X" --json
+```
+
+This is equivalent to starting a session and immediately generating a
+session-aware memory pack.
+
+A typical agent flow is:
+
+```bash
+START=$(agentmem protocol start "Implement feature X" --json)
+SESSION=$(printf '%s' "$START" \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
+# use returned memory pack before planning
+agentmem preflight --command "..." --session "$SESSION"
+agentmem event record --session "$SESSION" --type command_result --summary "..."
+agentmem candidate propose --session "$SESSION" --type failed_attempt --content "..." --evidence "..."
+agentmem session finish --session "$SESSION" --summary "..."
+agentmem protocol check --session "$SESSION"
+```
+
+`protocol start` does not finish the session, run preflights, record events, or
+propose candidates automatically.
+
+## Dogfood Reports
+
+Generate a local dogfood report for a memory-aware implementation session:
+
+```bash
+agentmem dogfood report --session ses_x
+agentmem dogfood report --session ses_x --json
+```
+
+Dogfood reports are read-only summaries derived from protocol compliance data.
+They show whether the protocol completed and whether useful dogfood signals
+appeared, such as memory injection, preflight use, evidence capture, and
+candidate learning.
+
+A report does not create memory, write receipts, or judge product usefulness
+automatically. It helps review real dogfood sessions.
+
+## Dogfooding v0.3
+
+Use the dogfood runbook for non-trivial implementation PRs:
+
+- `docs/dogfood/runbook.md`
+- `docs/dogfood/pr-checklist.md`
+- `docs/dogfood/subagent-program.md`
+- `docs/dogfood/v0.3-completion-plan.md`
+
+The v0.3 completion plan uses three real feature PRs reviewed by fresh-context
+sub-agents.
+
+## Candidate Review
+
+Agents can propose memory candidates, but candidates are untrusted until
+reviewed.
+
+```bash
+agentmem candidate propose --session ses_x --type failed_attempt --content "..." --evidence "..."
+agentmem manage --plan
+agentmem candidate approve cand_x
+agentmem candidate reject cand_y --reason "Too task-specific."
+```
+
+Approved candidates become active memory and can appear in future packs.
+Rejected candidates are retained for audit but are never injected.
+
+## Evidence Events
+
+Events provide auditable source material for memory candidates.
+
+```bash
+agentmem event record \
+  --session ses_x \
+  --type command_result \
+  --command "pnpm typecheck" \
+  --exit-code 1 \
+  --summary "Typecheck failed when JSX children were stored in defineEntry props."
+
+agentmem candidate propose \
+  --session ses_x \
+  --type failed_attempt \
+  --content "Using defineEntry for JSX-child demos fails with JSX children." \
+  --evidence-event evt_x
+```
+
+Candidates can still use `--evidence "..."`, but `--evidence-event`
+preserves stronger provenance.
+
+## Protocol Benchmarks
+
+Protocol benchmarks run deterministic local fixtures that check memory pack
+recall, preflight behavior, candidate proposal, evidence receipts, and protocol
+receipts.
+
+```bash
+agentmem benchmark run --fixture benchmarks/fixtures/protocol/old-mistake-avoidance.json
+agentmem benchmark run --all --json
+```
+
+Benchmarks run in isolated temporary workspaces and do not mutate the current
+project's `.agent-memory` database.
+
 ## Commands
 
 ```text
@@ -91,6 +260,11 @@ agentmem doctor [--json]
 agentmem session start "<task>" [--json]
 agentmem session finish --session <session-id> --summary "..." [--json]
 agentmem session receipt --session <session-id> [--json]
+agentmem protocol start "<task>" [--json]
+agentmem protocol check --session <session-id> [--json]
+agentmem dogfood report --session <session-id> [--json]
+agentmem event record --session <session-id> --type <type> --summary "..." [--command "..."] [--exit-code 1] [--json]
+agentmem event list --session <session-id> [--json]
 agentmem add <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]
 agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]
 agentmem decision <content>
@@ -107,6 +281,8 @@ agentmem candidate list [--status proposed] [--json]
 agentmem candidate approve <candidate-id> [--json]
 agentmem candidate reject <candidate-id> --reason "..." [--json]
 agentmem manage --plan [--json]
+agentmem benchmark run --fixture <path> [--json]
+agentmem benchmark run --all [--json]
 agentmem search <query> [--type <type>] [--json]
 agentmem list [--type <type>] [--all] [--json]
 agentmem update <memory-id> --reason <reason> [--content "..."] [--type <type>] [--status <status>] [--tags a,b] [--paths a,b] [--pinned true|false] [--priority n]

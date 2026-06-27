@@ -1,0 +1,44 @@
+{
+  "schema": "agent-memory-benchmark/v1",
+  "name": "command-preflight-warn",
+  "task": "Verify reel scene safely",
+  "memories": [
+    {
+      "type": "command_policy",
+      "content": "Do not run npm run render unless explicitly requested.",
+      "source": "user_explicit",
+      "confidence": "high",
+      "severity": "high",
+      "metadata": {
+        "commandPattern": "npm run render",
+        "matchType": "exact",
+        "decision": "warn",
+        "suggestedAction": "Run pnpm test instead."
+      }
+    }
+  ],
+  "events": [],
+  "preflightCommands": [
+    {
+      "command": "npm run render",
+      "expectDecision": "warn",
+      "expectMatchedMemoryIdsAtLeast": 1
+    }
+  ],
+  "candidates": [],
+  "expectations": {
+    "preflight": [
+      {
+        "command": "npm run render",
+        "decision": "warn",
+        "matchedMemoryIdsAtLeast": 1
+      }
+    ],
+    "receiptTypes": [
+      "session_started",
+      "preflight_checked",
+      "warning_triggered",
+      "session_finished"
+    ]
+  }
+}

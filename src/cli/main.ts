@@ -9,13 +9,19 @@ import { generatePack } from "../core/generate-pack.js";
 import { initProject } from "../core/init-project.js";
 import { installInstructions } from "../core/install-instructions.js";
 import { approveCandidate } from "../core/candidate-approve.js";
+import { formatBenchmarkReport } from "../core/benchmark/format-benchmark.js";
+import { runBenchmarkFixturePath, runProtocolBenchmarks } from "../core/benchmark/run-benchmarks.js";
 import { listCandidates } from "../core/candidate-list.js";
 import { rejectCandidate } from "../core/candidate-reject.js";
+import { getDogfoodReport } from "../core/dogfood-report.js";
+import { listEvidenceEvents } from "../core/list-events.js";
 import { listMemories } from "../core/list-memories.js";
 import { formatManagePlanText, getManagePlan } from "../core/manage-plan.js";
 import { markMemoryStale } from "../core/mark-memory-stale.js";
 import { preflightCommand } from "../core/preflight-command.js";
-import { recordEvent } from "../core/record-event.js";
+import { checkProtocolCompliance } from "../core/protocol-check.js";
+import { startProtocol } from "../core/protocol-start.js";
+import { recordEvidenceEvent } from "../core/record-event.js";
 import { retrieveMemories } from "../core/retrieve-memories.js";
 import { runV1Evals } from "../core/run-evals.js";
 import { searchMemories } from "../core/search-memories.js";
@@ -26,11 +32,15 @@ import { proposeCandidate } from "../core/candidate-propose.js";
 import { uninstallInstructions } from "../core/uninstall-instructions.js";
 import { updateMemory } from "../core/update-memory.js";
 import { formatTextList, formatTextPreflight } from "../formatters/output.js";
+import { formatDogfoodReport } from "../formatters/dogfood-report.js";
+import { formatProtocolCompliance } from "../formatters/protocol-check.js";
+import { formatProtocolStart } from "../formatters/protocol-start.js";
 import type { CreateMemoryInput, MemoryRecord } from "../domain/types.js";
 import {
   parseCandidateStatus,
   parseCandidateType,
   parseCommandPolicyMatchType,
+  parseEvidenceEventType,
   parseMemorySource,
   parseMemoryStatus,
   parseMemoryType,
@@ -125,6 +135,23 @@ function formatCreatedMemory(memory: MemoryRecord): string {
   return `Created ${memory.id} (${memory.type}).`;
 }
 
+function optionalString(parsed: ParsedArgs, name: string): string | undefined {
+  const value = parsed.options[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+function parseExitCode(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!/^-?\d+$/.test(value)) {
+    throw new Error(`Invalid --exit-code: ${value}`);
+  }
+
+  return Number(value);
+}
+
 function helpText(): string {
   return [
     "Agent Memory CLI",
@@ -139,6 +166,11 @@ function helpText(): string {
     "  agentmem session receipt --session <session-id> [--json]",
     "  agentmem add <content> --type <type> [--source <source>] [--path <path>] [--tags a,b] [--pinned] [--priority n]",
     "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b] [--pinned] [--priority n]",
+    "  agentmem protocol start \"<task>\" [--json]",
+    "  agentmem protocol check --session <session-id> [--json]",
+    "  agentmem dogfood report --session <session-id> [--json]",
+    "  agentmem event record --session <session-id> --type <type> --summary \"...\" [--command \"...\"] [--exit-code 1] [--json]",
+    "  agentmem event list --session <session-id> [--json]",
     "  agentmem decision <content>",
     "  agentmem failed <content>",
     "  agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block] [--suggest <action>]",
@@ -146,13 +178,14 @@ function helpText(): string {
     "  agentmem inject <task> [--session <session-id>] [--file <path>] [--command <command>] [--json|--format markdown]",
     "  agentmem pack <task> [--session <session-id>] [--file <path>] [--command <command>] [--json]",
     "  agentmem preflight --command <command> [--session <session-id>] [--json]",
-    "  agentmem event record --type <type> --summary \"...\" [--session <session-id>] [--json]",
     "  agentmem eval [--json]",
     "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" [--evidence \"...\"] [--evidence-event <event-id>] [--json]",
     "  agentmem candidate list [--status proposed] [--json]",
     "  agentmem candidate approve <candidate-id> [--json]",
     "  agentmem candidate reject <candidate-id> --reason \"...\" [--json]",
     "  agentmem manage --plan [--json]",
+    "  agentmem benchmark run --fixture <path> [--json]",
+    "  agentmem benchmark run --all [--json]",
     "  agentmem search <query> [--type <type>] [--json]",
     "  agentmem list [--type <type>] [--all] [--json]",
     "  agentmem update <memory-id> --reason <reason> [--content \"...\"] [--type <type>] [--status <status>] [--tags a,b] [--paths a,b] [--pinned true|false] [--priority n]",
@@ -336,6 +369,76 @@ async function main(): Promise<void> {
 
       throw new Error("Unknown session command. Run `agentmem help` for usage.");
     }
+    case "protocol": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "start") {
+        const task = parsed.positionals.slice(1).join(" ").trim();
+        if (!task) {
+          throw new Error("protocol start requires a task description");
+        }
+
+        const result = await startProtocol({ cwd, task });
+        render(asJson ? result : formatProtocolStart(result), asJson);
+        return;
+      }
+
+      if (subcommand === "check") {
+        const result = await checkProtocolCompliance({
+          cwd,
+          sessionId: requireOption(parsed, "session")
+        });
+        render(asJson ? result : formatProtocolCompliance(result), asJson);
+        return;
+      }
+
+      throw new Error("Unknown protocol command. Run `agentmem help` for usage.");
+    }
+    case "dogfood": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "report") {
+        const result = await getDogfoodReport({
+          cwd,
+          sessionId: requireOption(parsed, "session")
+        });
+        render(asJson ? result : formatDogfoodReport(result), asJson);
+        return;
+      }
+
+      throw new Error("Unknown dogfood command. Run `agentmem help` for usage.");
+    }
+    case "event": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "record") {
+        const result = await recordEvidenceEvent({
+          cwd,
+          sessionId: requireOption(parsed, "session"),
+          type: parseEvidenceEventType(requireOption(parsed, "type")),
+          summary: requireOption(parsed, "summary"),
+          command: optionalString(parsed, "command"),
+          exitCode: parseExitCode(optionalString(parsed, "exit-code"))
+        });
+        render(asJson ? result : `Recorded ${result.eventId}.`, asJson);
+        return;
+      }
+
+      if (subcommand === "list") {
+        const result = await listEvidenceEvents({
+          cwd,
+          sessionId: requireOption(parsed, "session")
+        });
+        render(
+          asJson
+            ? result
+            : result
+                .map((event) => `${event.eventId} ${event.eventType} ${String(event.payload.summary ?? "")}`)
+                .join("\n"),
+          asJson
+        );
+        return;
+      }
+
+      throw new Error("Unknown event command. Run `agentmem help` for usage.");
+    }
     case "candidate": {
       const subcommand = parsed.positionals[0];
       if (subcommand === "propose") {
@@ -344,8 +447,8 @@ async function main(): Promise<void> {
           sessionId: requireOption(parsed, "session"),
           type: parseCandidateType(requireOption(parsed, "type")),
           content: requireOption(parsed, "content"),
-          evidence: optionalOption(parsed, "evidence"),
-          evidenceEventId: optionalOption(parsed, "evidence-event")
+          evidence: optionalString(parsed, "evidence"),
+          evidenceEventId: optionalString(parsed, "evidence-event")
         });
         render(asJson ? result : `Proposed ${result.candidateId}.`, asJson);
         return;
@@ -435,6 +538,28 @@ async function main(): Promise<void> {
 
       const result = await getManagePlan({ cwd });
       render(asJson ? result : formatManagePlanText(result), asJson);
+      return;
+    }
+    case "benchmark": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand !== "run") {
+        throw new Error("Unknown benchmark command. Run `agentmem help` for usage.");
+      }
+
+      const fixture = parsed.options.fixture;
+      const all = Boolean(parsed.options.all);
+      if ((typeof fixture !== "string" || fixture.trim().length === 0) && !all) {
+        throw new Error("benchmark run requires --fixture or --all");
+      }
+      if (typeof fixture === "string" && all) {
+        throw new Error("benchmark run accepts only one of --fixture or --all");
+      }
+
+      const result =
+        typeof fixture === "string"
+          ? await runBenchmarkFixturePath(fixture)
+          : await runProtocolBenchmarks({ cwd });
+      render(asJson ? result : formatBenchmarkReport(result), asJson);
       return;
     }
     case "pack":
@@ -556,21 +681,6 @@ async function main(): Promise<void> {
         reason: requireOption(parsed, "reason")
       });
       render(asJson ? result : `Archived ${result.id}.`, asJson);
-      return;
-    }
-    case "event": {
-      const subcommand = parsed.positionals[0];
-      if (subcommand !== "record") {
-        throw new Error("Unknown event command. Run `agentmem help` for usage.");
-      }
-
-      const result = await recordEvent({
-        cwd,
-        type: requireOption(parsed, "type"),
-        summary: requireOption(parsed, "summary"),
-        sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
-      });
-      render(asJson ? result : `Recorded ${result.eventId}.`, asJson);
       return;
     }
     case "eval": {

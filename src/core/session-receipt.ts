@@ -13,6 +13,7 @@ export interface SessionReceiptSummary {
   warningsTriggered: number;
   blocksTriggered: number;
   evidenceRecorded: number;
+  eventsRecorded: number;
   candidatesProposed: number;
   candidatesReviewed: number;
   sessionFinished: boolean;
@@ -56,6 +57,7 @@ export function summarizeSessionReceipts({
     warningsTriggered: receipts.filter((receipt) => receipt.receiptType === "warning_triggered").length,
     blocksTriggered: receipts.filter((receipt) => receipt.receiptType === "block_triggered").length,
     evidenceRecorded: receipts.filter((receipt) => receipt.receiptType === "evidence_recorded").length,
+    eventsRecorded: receipts.filter((receipt) => receipt.receiptType === "event_recorded").length,
     candidatesProposed: receipts.filter((receipt) => receipt.receiptType === "candidate_proposed").length,
     candidatesReviewed: receipts.filter((receipt) => receipt.receiptType === "candidate_reviewed").length,
     sessionFinished: receipts.some((receipt) => receipt.receiptType === "session_finished"),
@@ -95,6 +97,7 @@ export function formatSessionReceiptText(receipt: SessionReceiptSummary): string
     !receipt.packLoaded &&
     receipt.preflightChecks === 0 &&
     receipt.evidenceRecorded === 0 &&
+    receipt.eventsRecorded === 0 &&
     receipt.candidatesProposed === 0
   ) {
     return "Memory: session started, no pack/preflight/candidates recorded.";
@@ -104,8 +107,9 @@ export function formatSessionReceiptText(receipt: SessionReceiptSummary): string
   const memoryLabel = memoryCount === 1 ? "memory" : "memories";
   const preflightLabel = receipt.preflightChecks === 1 ? "preflight" : "preflights";
   const warningLabel = receipt.warningsTriggered === 1 ? "warning" : "warnings";
-  const evidenceLabel = receipt.evidenceRecorded === 1 ? "evidence event" : "evidence events";
+  const recordedEvents = receipt.evidenceRecorded + receipt.eventsRecorded;
+  const eventLabel = recordedEvents === 1 ? "event" : "events";
   const candidateLabel = receipt.candidatesProposed === 1 ? "candidate" : "candidates";
 
-  return `Memory: loaded ${memoryCount} ${memoryLabel}, ran ${receipt.preflightChecks} ${preflightLabel}, triggered ${receipt.warningsTriggered} ${warningLabel}, recorded ${receipt.evidenceRecorded} ${evidenceLabel}, proposed ${receipt.candidatesProposed} ${candidateLabel}.`;
+  return `Memory: loaded ${memoryCount} ${memoryLabel}, ran ${receipt.preflightChecks} ${preflightLabel}, triggered ${receipt.warningsTriggered} ${warningLabel}, recorded ${recordedEvents} ${eventLabel}, proposed ${receipt.candidatesProposed} ${candidateLabel}.`;
 }

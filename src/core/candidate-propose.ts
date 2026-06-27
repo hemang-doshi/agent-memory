@@ -2,6 +2,7 @@ import type { CandidateType, MemoryCandidateRecord } from "../domain/types.js";
 import { assertNoObviousSecret } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
+import { eventSummary, isEvidenceEventType } from "./evidence-events.js";
 import { requireSession, shortId, writeProtocolReceipt } from "./protocol-receipts.js";
 
 export async function proposeCandidate({
@@ -23,40 +24,47 @@ export async function proposeCandidate({
     throw new Error("candidate propose requires --content");
   }
 
-  const trimmedEvidence = evidence?.trim() ?? "";
-  const trimmedEventId = evidenceEventId?.trim() ?? "";
-  if (trimmedEvidence.length === 0 && trimmedEventId.length === 0) {
+  const trimmedEvidence = evidence?.trim();
+  const trimmedEvidenceEventId = evidenceEventId?.trim();
+  if (!trimmedEvidence && !trimmedEvidenceEventId) {
     throw new Error("candidate propose requires --evidence or --evidence-event");
   }
 
   assertNoObviousSecret(content);
-  if (trimmedEvidence.length > 0) {
-    assertNoObviousSecret(trimmedEvidence);
-  }
 
   const loaded = await loadProject(cwd);
 
   try {
     requireSession(loaded, sessionId);
     const evidenceEventIds: string[] = [];
-    if (trimmedEventId.length > 0) {
-      const event = loaded.repo.getEvent(trimmedEventId);
+    let storedEvidence = trimmedEvidence ?? "";
+
+    if (trimmedEvidenceEventId) {
+      const event = loaded.repo.getEvent(trimmedEvidenceEventId);
       if (!event || event.projectId !== loaded.project.projectId) {
-        throw new Error(`Unknown evidence event: ${trimmedEventId}`);
+        throw new Error(`Unknown event: ${trimmedEvidenceEventId}`);
+      }
+
+      if (!isEvidenceEventType(event.eventType)) {
+        throw new Error(`Event cannot be used as candidate evidence: ${trimmedEvidenceEventId}`);
       }
 
       if (event.payload.sessionId !== sessionId) {
-        throw new Error(
-          `Evidence event ${trimmedEventId} does not belong to session ${sessionId}.`
-        );
+        throw new Error(`Evidence event does not belong to session: ${trimmedEvidenceEventId}`);
       }
 
       evidenceEventIds.push(event.eventId);
+      if (!storedEvidence) {
+        storedEvidence = eventSummary(event);
+      }
     }
 
+    if (storedEvidence.trim().length === 0) {
+      throw new Error("candidate propose requires --evidence or --evidence-event");
+    }
+
+    assertNoObviousSecret(storedEvidence);
     const now = new Date().toISOString();
-    const evidenceText =
-      trimmedEvidence.length > 0 ? trimmedEvidence : `Evidence event: ${evidenceEventIds[0]}`;
     const candidate: MemoryCandidateRecord = {
       candidateId: shortId("cand"),
       projectId: loaded.project.projectId,
@@ -67,7 +75,7 @@ export async function proposeCandidate({
       source: "agent_reported",
       confidence: "medium",
       severity: "medium",
-      evidence: evidenceText,
+      evidence: storedEvidence,
       evidenceEventIds,
       candidateStatus: "proposed",
       proposedBy: "agent",
@@ -85,7 +93,7 @@ export async function proposeCandidate({
         candidateId: candidate.candidateId,
         type,
         content,
-        evidence: evidenceText,
+        evidence: storedEvidence,
         evidenceEventIds
       }
     });

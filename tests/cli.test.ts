@@ -201,7 +201,7 @@ describe("CLI smoke tests", () => {
       cwd
     );
     const receiptJson = JSON.parse(receipt.stdout) as { receipts: Array<{ type: string }> };
-    expect(receiptJson.receipts.map((item) => item.type)).toContain("evidence_recorded");
+    expect(receiptJson.receipts.map((item) => item.type)).toContain("event_recorded");
 
     const forgotten = await runCli(
       ["forget", createdJson.id, "--reason", "No longer needed.", "--json"],

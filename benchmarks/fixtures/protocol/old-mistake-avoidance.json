@@ -1,0 +1,31 @@
+{
+  "schema": "agent-memory-benchmark/v1",
+  "name": "old-mistake-avoidance",
+  "description": "A known failed approach should appear in the pack for a similar task.",
+  "task": "Update the component browser demo for PanelCard",
+  "packTask": "Update component browser PanelCard demo without repeating failed JSX-child defineEntry approach",
+  "memories": [
+    {
+      "type": "failed_attempt",
+      "content": "Using defineEntry for JSX-child demos failed due to TypeScript limitations.",
+      "source": "user_explicit",
+      "confidence": "high",
+      "severity": "medium",
+      "tags": ["typescript", "component-browser"]
+    }
+  ],
+  "events": [],
+  "preflightCommands": [],
+  "candidates": [],
+  "expectations": {
+    "packIncludes": [
+      "Using defineEntry for JSX-child demos failed"
+    ],
+    "matchedMemoryCountAtLeast": 1,
+    "receiptTypes": [
+      "session_started",
+      "pack_loaded",
+      "session_finished"
+    ]
+  }
+}

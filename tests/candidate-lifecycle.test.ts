@@ -116,7 +116,9 @@ describe("candidate lifecycle", () => {
       evidenceEventId: event.eventId
     });
 
-    expect(candidate.evidence).toBe(`Evidence event: ${event.eventId}`);
+    expect(candidate.evidence).toBe(
+      "pnpm test failed until the package manager command was corrected."
+    );
     expect(candidate.evidenceEventIds).toEqual([event.eventId]);
 
     const [stored] = await listCandidates({ cwd });
@@ -151,7 +153,7 @@ describe("candidate lifecycle", () => {
         content: "Use pnpm.",
         evidenceEventId: "evt_missing"
       })
-    ).rejects.toThrow("Unknown evidence event: evt_missing");
+    ).rejects.toThrow("Unknown event: evt_missing");
 
     await expect(
       proposeCandidate({
@@ -161,9 +163,7 @@ describe("candidate lifecycle", () => {
         content: "Use pnpm.",
         evidenceEventId: event.eventId
       })
-    ).rejects.toThrow(
-      `Evidence event ${event.eventId} does not belong to session ${session.sessionId}.`
-    );
+    ).rejects.toThrow(`Evidence event does not belong to session: ${event.eventId}`);
   });
 
   test("candidate list returns newest first and can filter proposed", async () => {
