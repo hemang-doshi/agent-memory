@@ -31,19 +31,20 @@ pnpm cli pack "Implement the next reel scene"
 pnpm cli preflight --command "npm run render"
 ```
 
-## Protocol Spine v0.2-alpha
+## Protocol Spine
 
-The v0.2-alpha slice adds a local audit spine around the existing memory and
-preflight workflow:
+The protocol spine adds a local audit trail around the existing memory and
+preflight workflow. The recommended agent integration path starts the session
+and loads the memory pack in one command:
 
 ```bash
 pnpm cli install-instructions
 pnpm cli doctor --json
 
-SESSION=$(pnpm cli session start "Implement protocol spine smoke test" --json \
+START=$(pnpm cli protocol start "Implement protocol spine smoke test" --json)
+SESSION=$(printf '%s' "$START" \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
 
-pnpm cli pack "Implement protocol spine smoke test" --session "$SESSION" --json
 pnpm cli preflight --command "npm run render" --session "$SESSION" --json
 pnpm cli candidate propose \
   --session "$SESSION" \
@@ -52,12 +53,32 @@ pnpm cli candidate propose \
   --evidence "Observed during this implementation." \
   --json
 pnpm cli session finish --session "$SESSION" --summary "Smoke test complete." --json
-pnpm cli session receipt --session "$SESSION" --json
+pnpm cli protocol check --session "$SESSION" --json
 ```
 
-`session receipt` reads from SQLite protocol receipts, not from agent
+`protocol check` reads from SQLite protocol receipts, not from agent
 self-reporting. Candidate proposals are stored as untrusted
 `memory_candidates` records and do not create trusted durable memories.
+
+## Agent Router Instructions
+
+Install the Agent Memory router into `AGENTS.md`:
+
+```bash
+agentmem install-instructions
+```
+
+The managed block tells coding agents to:
+
+- start every task with `agentmem protocol start "<task>" --json`
+- use the returned memory pack before planning
+- preflight risky commands
+- record evidence only when meaningful
+- propose candidates only for reusable learning
+- finish the session and run `agentmem protocol check --session <id> --json`
+
+The router is designed to be always memory-aware but rarely noisy. It does not
+ask agents to record trivial events or propose memory for one-off task details.
 
 ## Protocol Compliance
 

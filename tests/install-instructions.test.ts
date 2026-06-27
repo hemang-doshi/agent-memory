@@ -4,12 +4,20 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { doctor } from "../src/core/doctor.js";
 import { initProject } from "../src/core/init-project.js";
-import { AGENT_MEMORY_ROUTER_BLOCK, AGENT_MEMORY_START_MARKER } from "../src/core/instructions-block.js";
+import {
+  AGENT_MEMORY_END_MARKER,
+  AGENT_MEMORY_ROUTER_BLOCK,
+  AGENT_MEMORY_START_MARKER
+} from "../src/core/instructions-block.js";
 import { installInstructions } from "../src/core/install-instructions.js";
 import { uninstallInstructions } from "../src/core/uninstall-instructions.js";
 import { cleanupWorkspace, createTempWorkspace } from "./helpers.js";
 
 const workspaces: string[] = [];
+
+function countMatches(content: string, pattern: RegExp): number {
+  return (content.match(pattern) ?? []).length;
+}
 
 afterEach(async () => {
   await Promise.all(workspaces.splice(0).map(cleanupWorkspace));
@@ -24,7 +32,13 @@ describe("instruction installer", () => {
 
     const agentsPath = join(cwd, "AGENTS.md");
     expect(existsSync(agentsPath)).toBe(true);
-    expect(readFileSync(agentsPath, "utf8")).toContain("## Agent Memory Router");
+    const content = readFileSync(agentsPath, "utf8");
+    expect(content).toContain("## Agent Memory Router");
+    expect(content).toContain('agentmem protocol start "<task>" --json');
+    expect(content).toContain("agentmem protocol check --session <session-id> --json");
+    expect(content).toContain("always memory-aware, rarely noisy");
+    expect(content).toContain("Run preflight before risky commands");
+    expect(content).toContain("Do not store secrets");
   });
 
   test("appends block to existing AGENTS.md and preserves content", async () => {
@@ -51,31 +65,70 @@ describe("instruction installer", () => {
     const twice = readFileSync(join(cwd, "AGENTS.md"), "utf8");
 
     expect(twice).toBe(once);
+    expect(countMatches(twice, /agent-memory:start/g)).toBe(1);
+    expect(countMatches(twice, /agent-memory:end/g)).toBe(1);
   });
 
-  test("replaces old managed block only", async () => {
+  test("replaces old managed block with v0.3 router only", async () => {
     const cwd = await createTempWorkspace("agentmem-install-replace");
     workspaces.push(cwd);
     const agentsPath = join(cwd, "AGENTS.md");
     writeFileSync(
       agentsPath,
       [
-        "# Keep",
+        "# AGENTS.md",
+        "",
+        "Human content before.",
         "",
         "<!-- agent-memory:start -->",
-        "old block",
+        "## Agent Memory Router",
+        "",
+        "Old command:",
+        'agentmem session start "<task>" --json',
+        'agentmem pack "<task>" --session <session-id> --json',
         "<!-- agent-memory:end -->",
         "",
-        "Tail"
+        "Human content after."
       ].join("\n")
     );
 
     await installInstructions({ cwd });
 
     const content = readFileSync(agentsPath, "utf8");
-    expect(content).toContain("# Keep");
-    expect(content).toContain("Tail");
-    expect(content).not.toContain("old block");
+    expect(content).toContain("Human content before.");
+    expect(content).toContain("Human content after.");
+    expect(content).toContain('agentmem protocol start "<task>" --json');
+    expect(content).toContain("agentmem protocol check --session <session-id> --json");
+    expect(content).not.toContain("Old command:");
+    expect(content).not.toContain('agentmem pack "<task>" --session <session-id> --json');
+    expect(countMatches(content, /agent-memory:start/g)).toBe(1);
+    expect(countMatches(content, /agent-memory:end/g)).toBe(1);
+  });
+
+  test("preserves human content around managed block", async () => {
+    const cwd = await createTempWorkspace("agentmem-install-preserve");
+    workspaces.push(cwd);
+    const agentsPath = join(cwd, "AGENTS.md");
+    writeFileSync(
+      agentsPath,
+      [
+        "# Repo Instructions",
+        "",
+        "Human rule before.",
+        "",
+        AGENT_MEMORY_START_MARKER,
+        "old block",
+        AGENT_MEMORY_END_MARKER,
+        "",
+        "Human rule after."
+      ].join("\n")
+    );
+
+    await installInstructions({ cwd });
+
+    const content = readFileSync(agentsPath, "utf8");
+    expect(content).toContain("Human rule before.");
+    expect(content).toContain("Human rule after.");
     expect(content).toContain(AGENT_MEMORY_ROUTER_BLOCK);
   });
 
@@ -91,6 +144,7 @@ describe("instruction installer", () => {
     expect(content).toContain("Intro");
     expect(content).toContain("Outro");
     expect(content).not.toContain(AGENT_MEMORY_START_MARKER);
+    expect(content).not.toContain("Agent Memory Router");
   });
 
   test("uninstall does not create AGENTS.md when missing", async () => {
