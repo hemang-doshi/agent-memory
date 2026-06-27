@@ -77,6 +77,35 @@ A compliant minimal session has:
 Preflights, events, and candidates are reported as activity but are not
 required for every task.
 
+## Protocol Start
+
+Start a memory-aware agent session and load the initial memory pack in one step:
+
+```bash
+agentmem protocol start "Implement feature X"
+agentmem protocol start "Implement feature X" --json
+```
+
+This is equivalent to starting a session and immediately generating a
+session-aware memory pack.
+
+A typical agent flow is:
+
+```bash
+START=$(agentmem protocol start "Implement feature X" --json)
+SESSION=$(printf '%s' "$START" \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
+# use returned memory pack before planning
+agentmem preflight --command "..." --session "$SESSION"
+agentmem event record --session "$SESSION" --type command_result --summary "..."
+agentmem candidate propose --session "$SESSION" --type failed_attempt --content "..." --evidence "..."
+agentmem session finish --session "$SESSION" --summary "..."
+agentmem protocol check --session "$SESSION"
+```
+
+`protocol start` does not finish the session, run preflights, record events, or
+propose candidates automatically.
+
 ## Candidate Review
 
 Agents can propose memory candidates, but candidates are untrusted until
@@ -137,6 +166,7 @@ project's `.agent-memory` database.
 - `agentmem session start "<task>" [--json]`
 - `agentmem session finish --session <session-id> --summary "..." [--json]`
 - `agentmem session receipt --session <session-id> [--json]`
+- `agentmem protocol start "<task>" [--json]`
 - `agentmem protocol check --session <session-id> [--json]`
 - `agentmem event record --session <session-id> --type <type> --summary "..." [--command "..."] [--exit-code 1] [--json]`
 - `agentmem event list --session <session-id> [--json]`
