@@ -3,6 +3,7 @@ import type { MemoryRecord, RetrieveMemoriesInput } from "../domain/types.js";
 import { parseCommandPolicyMatchType } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
+import { excludeRelationSupersededMemories, isAgentVisibleMemory } from "./memory-eligibility.js";
 
 function tokenize(text: string): string[] {
   return Array.from(new Set(text
@@ -19,7 +20,14 @@ interface ScoredMemory {
     pathMatch: boolean;
     tagMatch: boolean;
     commandMatch: boolean;
+    pinned: boolean;
+    priority: number;
+    recencyBoost: number;
+    useCountBoost: number;
+    mistakeBoost: boolean;
+    conflictWinner: boolean;
   };
+  reason: string;
 }
 
 function commandMatches(command: string | undefined, memory: MemoryRecord): boolean {
@@ -64,8 +72,12 @@ function scoreMemory(
   let score = TYPE_PRIORITIES[memory.type] ?? 0;
   score += (SEVERITY_SCORES[memory.severity] ?? 0) * 10;
   score += (CONFIDENCE_SCORES[memory.confidence] ?? 0) * 6;
+  score += memory.priority * 8;
   if (memory.status === "active") {
     score += 12;
+  }
+  if (memory.pinned) {
+    score += 40;
   }
 
   const haystack = `${memory.content} ${memory.summary ?? ""} ${memory.tags.join(" ")} ${memory.paths.join(" ")}`.toLowerCase();
@@ -94,15 +106,38 @@ function scoreMemory(
     score += 20;
   }
 
+  const recencyBoost = calculateRecencyBoost(memory);
+  score += recencyBoost;
+  const useCountBoost = Math.min(memory.useCount, 10);
+  score += useCountBoost;
+
+  const mistakeBoost =
+    (memory.type === "failed_attempt" ||
+      memory.type === "agent_mistake" ||
+      memory.type === "known_fix" ||
+      memory.type === "rejected_approach") &&
+    (tokenOverlap > 0 || pathMatch || tagMatch);
+  if (mistakeBoost) {
+    score += 18;
+  }
+
+  const signals = {
+    tokenOverlap,
+    pathMatch,
+    tagMatch,
+    commandMatch,
+    pinned: memory.pinned,
+    priority: memory.priority,
+    recencyBoost,
+    useCountBoost,
+    mistakeBoost,
+    conflictWinner: false
+  };
   return {
     memory,
     score,
-    signals: {
-      tokenOverlap,
-      pathMatch,
-      tagMatch,
-      commandMatch
-    }
+    signals,
+    reason: describeReason(signals)
   };
 }
 
@@ -111,8 +146,121 @@ function hasRelevanceSignal(scored: ScoredMemory): boolean {
     scored.signals.tokenOverlap > 0 ||
     scored.signals.pathMatch ||
     scored.signals.tagMatch ||
-    scored.signals.commandMatch
+    scored.signals.commandMatch ||
+    scored.signals.pinned ||
+    scored.signals.priority > 0
   );
+}
+
+function calculateRecencyBoost(memory: MemoryRecord): number {
+  const basis = memory.lastRetrievedAt ?? memory.lastUsedAt ?? memory.createdAt;
+  const timestamp = Date.parse(basis);
+  if (Number.isNaN(timestamp)) {
+    return 0;
+  }
+
+  const ageDays = Math.max(0, (Date.now() - timestamp) / 86_400_000);
+  if (ageDays <= 7) {
+    return 8;
+  }
+  if (ageDays <= 30) {
+    return 4;
+  }
+  return 0;
+}
+
+function describeReason(signals: ScoredMemory["signals"]): string {
+  const reasons: string[] = [];
+  if (signals.pinned) {
+    reasons.push("pinned");
+  }
+  if (signals.commandMatch) {
+    reasons.push("command match");
+  }
+  if (signals.pathMatch) {
+    reasons.push("path match");
+  }
+  if (signals.tagMatch) {
+    reasons.push("tag match");
+  }
+  if (signals.tokenOverlap > 0) {
+    reasons.push(`${signals.tokenOverlap} query token${signals.tokenOverlap === 1 ? "" : "s"}`);
+  }
+  if (signals.mistakeBoost) {
+    reasons.push("regression prevention");
+  }
+  if (signals.priority > 0) {
+    reasons.push(`priority ${signals.priority}`);
+  }
+  return reasons.join(", ") || "eligible memory";
+}
+
+function resolveConflictGroups(scored: ScoredMemory[]): ScoredMemory[] {
+  const winners = new Map<string, ScoredMemory>();
+  const ungrouped: ScoredMemory[] = [];
+
+  for (const entry of scored) {
+    const group = entry.memory.conflictGroup;
+    if (!group) {
+      ungrouped.push(entry);
+      continue;
+    }
+
+    const current = winners.get(group);
+    if (!current || entry.score > current.score) {
+      winners.set(group, entry);
+    }
+  }
+
+  for (const winner of winners.values()) {
+    winner.signals.conflictWinner = true;
+    winner.reason = `${winner.reason}, conflict winner`;
+    winner.memory.metadata = {
+      ...winner.memory.metadata,
+      retrieval: {
+        score: winner.score,
+        signals: winner.signals,
+        reason: winner.reason
+      }
+    };
+  }
+
+  return [...ungrouped, ...winners.values()];
+}
+
+function attachRetrievalMetadata(scored: ScoredMemory): MemoryRecord {
+  return {
+    ...scored.memory,
+    metadata: {
+      ...scored.memory.metadata,
+      retrieval: {
+        score: scored.score,
+        signals: scored.signals,
+        reason: scored.reason
+      }
+    }
+  };
+}
+
+function selectResults(scored: ScoredMemory[], maxResults: number): ScoredMemory[] {
+  const resolved = resolveConflictGroups(scored).sort((left, right) => right.score - left.score);
+  const guaranteed = resolved.filter((entry) => entry.memory.pinned || entry.memory.priority > 0);
+  const regular = resolved.filter((entry) => !entry.memory.pinned && entry.memory.priority <= 0);
+  const selected: ScoredMemory[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of [...guaranteed, ...regular]) {
+    if (selected.length >= maxResults) {
+      break;
+    }
+    if (seen.has(entry.memory.id)) {
+      continue;
+    }
+    selected.push(entry);
+    seen.add(entry.memory.id);
+  }
+
+  return selected;
 }
 
 export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<MemoryRecord[]> {
@@ -121,29 +269,30 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
   try {
     const files = input.files ?? [];
     const queryTokens = tokenize(`${input.task} ${input.command ?? ""}`);
-    const memories = loaded.repo.listMemories(loaded.project.projectId);
+    const now = Date.now();
+    const memories = excludeRelationSupersededMemories(
+      loaded.repo.listMemories(loaded.project.projectId)
+    );
 
-    const results = memories
-      .filter((memory) => {
-        if (memory.status === "archived" || memory.status === "rejected") {
-          return false;
-        }
-
-        if (memory.status === "stale" && !loaded.context.config.retrieval.include_stale) {
-          return false;
-        }
-
-        if (memory.status === "unverified" && !loaded.context.config.retrieval.include_unverified) {
-          return false;
-        }
-
-        return true;
-      })
+    const scored = memories
+      .filter((memory) =>
+        isAgentVisibleMemory({
+          memory,
+          config: loaded.context.config,
+          now
+        })
+      )
       .map((memory) => scoreMemory(memory, queryTokens, files, input.command))
       .filter(hasRelevanceSignal)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, input.maxResults ?? loaded.context.config.retrieval.max_results)
-      .map((entry) => entry.memory);
+      .sort((left, right) => right.score - left.score);
+    const resolved = selectResults(
+      scored,
+      input.maxResults ?? loaded.context.config.retrieval.max_results
+    );
+    const results = resolved.map(attachRetrievalMetadata);
+    const matchedMemoryIds = results.map((memory) => memory.id);
+
+    loaded.repo.markMemoriesRetrieved(matchedMemoryIds);
 
     loaded.repo.insertEvent({
       projectId: loaded.project.projectId,
@@ -152,7 +301,13 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
       payload: {
         task: input.task,
         command: input.command ?? null,
-        matchedMemoryIds: results.map((memory) => memory.id)
+        matchedMemoryIds,
+        scoring: resolved.map((entry) => ({
+          memoryId: entry.memory.id,
+          score: entry.score,
+          reason: entry.reason,
+          signals: entry.signals
+        }))
       }
     });
 

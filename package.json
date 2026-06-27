@@ -1,11 +1,19 @@
 {
   "name": "agent-memory-preflight",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Local-first project memory and preflight CLI for coding agents.",
   "type": "module",
   "bin": {
     "agentmem": "./dist/cli/main.js"
   },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -20,6 +28,14 @@
     "sqlite",
     "agents"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hemang-doshi/agent-memory.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hemang-doshi/agent-memory/issues"
+  },
+  "homepage": "https://github.com/hemang-doshi/agent-memory#readme",
   "license": "MIT",
   "engines": {
     "node": ">=22"

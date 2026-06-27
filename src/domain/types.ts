@@ -61,6 +61,7 @@ export const RECEIPT_TYPES = [
   "block_triggered",
   "candidate_proposed",
   "candidate_reviewed",
+  "evidence_recorded",
   "session_finished"
 ] as const;
 export const CANDIDATE_TYPES = [
@@ -136,9 +137,17 @@ export interface MemoryRecord {
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
+  pinned: boolean;
+  priority: number;
+  useCount: number;
+  lastRetrievedAt: string | null;
+  lastInjectedAt: string | null;
   expiresAt: string | null;
   relatedMemoryIds: string[];
   supersedesMemoryId: string | null;
+  conflictGroup: string | null;
+  safetyFlags: string[];
+  redactionStatus: "none" | "redacted" | "blocked";
   metadata: JsonRecord;
 }
 
@@ -152,6 +161,8 @@ export interface EventRecord {
     | "memory_retrieved"
     | "memory_marked_stale"
     | "pack_generated"
+    | "evidence_recorded"
+    | "reusable_observation"
     | EvidenceEventType;
   timestamp: string;
   actor: "user" | "agent" | "system";
@@ -283,9 +294,14 @@ export interface CreateMemoryInput {
   paths?: string[];
   tags?: string[];
   severity?: SeverityLevel;
+  pinned?: boolean;
+  priority?: number;
   expiresAt?: string | null;
   relatedMemoryIds?: string[];
   supersedesMemoryId?: string | null;
+  conflictGroup?: string | null;
+  safetyFlags?: string[];
+  redactionStatus?: MemoryRecord["redactionStatus"];
   metadata?: JsonRecord;
   status?: MemoryStatus;
 }

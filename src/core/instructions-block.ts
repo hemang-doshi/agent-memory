@@ -27,7 +27,7 @@ For every task:
    Good evidence includes test results, command results, user corrections, and reusable observations. Do not record events for trivial observations.
 
 4. Propose memory candidates only for reusable learning:
-   \`agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." --json\`
+   \`agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." [--evidence-event <event-id>] --json\`
 
    Good candidates include failed approaches, successful fixes, agent mistakes, workflow rules, and command-policy candidates. Candidates are untrusted until reviewed.
 

@@ -1,0 +1,224 @@
+{
+  "retrievalCases": [
+    {
+      "name": "basic retrieval",
+      "task": "fix lockfile drift in package installs",
+      "memories": [
+        {
+          "label": "pnpm-rule",
+          "content": "Use pnpm for package installs to avoid lockfile drift.",
+          "type": "workflow_rule",
+          "source": "user_explicit",
+          "tags": ["package-manager"]
+        },
+        {
+          "label": "unrelated-design",
+          "content": "Use compact cards for the dashboard layout.",
+          "type": "design_rule",
+          "source": "cli",
+          "tags": ["dashboard"]
+        },
+        {
+          "label": "stale-npm-rule",
+          "content": "Use npm install for package installs.",
+          "type": "workflow_rule",
+          "source": "cli",
+          "status": "stale",
+          "tags": ["package-manager"]
+        }
+      ],
+      "expectedIncluded": ["pnpm-rule"],
+      "expectedExcluded": ["unrelated-design", "stale-npm-rule"]
+    },
+    {
+      "name": "project scoping",
+      "task": "run project-specific adapter tests",
+      "memories": [
+        {
+          "label": "local-adapter-rule",
+          "content": "This project runs adapter tests with pnpm test.",
+          "type": "workflow_rule",
+          "source": "user_explicit",
+          "tags": ["adapter-tests"]
+        },
+        {
+          "label": "foreign-adapter-rule",
+          "content": "Foreign project runs adapter tests with yarn test.",
+          "type": "workflow_rule",
+          "source": "user_explicit",
+          "tags": ["adapter-tests"],
+          "project": "foreign"
+        }
+      ],
+      "expectedIncluded": ["local-adapter-rule"],
+      "expectedExcluded": ["foreign-adapter-rule"]
+    },
+    {
+      "name": "pinned memory inclusion",
+      "task": "rename the release notes file",
+      "memories": [
+        {
+          "label": "pinned-pnpm",
+          "content": "Always use pnpm for package operations in this repository.",
+          "type": "workflow_rule",
+          "source": "user_explicit",
+          "pinned": true,
+          "priority": 2,
+          "tags": ["package-manager"]
+        },
+        {
+          "label": "unrelated-route-note",
+          "content": "Use route handlers for hosted API endpoints.",
+          "type": "architecture_note",
+          "source": "cli"
+        }
+      ],
+      "expectedIncluded": ["pinned-pnpm"],
+      "expectedExcluded": ["unrelated-route-note"],
+      "expectedReasonIncludes": {
+        "pinned-pnpm": "pinned"
+      }
+    },
+    {
+      "name": "mistake and regression retrieval",
+      "task": "repair the migration rollback test without repeating sqlite transaction mistake",
+      "memories": [
+        {
+          "label": "sqlite-rollback-mistake",
+          "content": "A sqlite migration rollback failed when a transaction was opened inside another transaction.",
+          "type": "agent_mistake",
+          "source": "agent_reported",
+          "tags": ["sqlite", "migration"],
+          "paths": ["src/db/database.ts"]
+        },
+        {
+          "label": "unrelated-cli-fix",
+          "content": "Dashboard snapshots omitted compact card spacing.",
+          "type": "known_fix",
+          "source": "cli",
+          "tags": ["dashboard"]
+        }
+      ],
+      "files": ["src/db/database.ts"],
+      "expectedIncluded": ["sqlite-rollback-mistake"],
+      "expectedExcluded": ["unrelated-cli-fix"],
+      "expectedReasonIncludes": {
+        "sqlite-rollback-mistake": "regression prevention"
+      }
+    },
+    {
+      "name": "conflict handling",
+      "task": "choose package manager for test runs",
+      "memories": [
+        {
+          "label": "superseded-npm-install",
+          "content": "Use npm for package installs.",
+          "type": "workflow_rule",
+          "source": "cli",
+          "tags": ["package-manager"]
+        },
+        {
+          "label": "current-pnpm-install",
+          "content": "Use pnpm for package installs.",
+          "type": "workflow_rule",
+          "source": "user_explicit",
+          "tags": ["package-manager"],
+          "supersedes": "superseded-npm-install"
+        },
+        {
+          "label": "low-priority-npm-tests",
+          "content": "Prefer npm scripts for test runs.",
+          "type": "workflow_rule",
+          "source": "cli",
+          "tags": ["tests"],
+          "conflictGroup": "test-runner",
+          "priority": 0
+        },
+        {
+          "label": "high-priority-pnpm-tests",
+          "content": "Prefer pnpm for test runs.",
+          "type": "workflow_rule",
+          "source": "user_explicit",
+          "tags": ["tests"],
+          "conflictGroup": "test-runner",
+          "priority": 2
+        }
+      ],
+      "expectedIncluded": ["current-pnpm-install", "high-priority-pnpm-tests"],
+      "expectedExcluded": ["superseded-npm-install", "low-priority-npm-tests"],
+      "expectedReasonIncludes": {
+        "high-priority-pnpm-tests": "conflict winner"
+      }
+    }
+  ],
+  "secretRedaction": {
+    "task": "prepare credential handling packet",
+    "rejectedWriteContent": "token=DO_NOT_COMMIT_FAKE",
+    "blockedLeakSentinel": "DO_NOT_LEAK_SENTINEL",
+    "memories": [
+      {
+        "label": "safe-credential-policy",
+        "content": "Keep credential examples redacted in docs and tests.",
+        "type": "constraint",
+        "source": "user_explicit",
+        "tags": ["credentials"]
+      },
+      {
+        "label": "blocked-credential-note",
+        "content": "Blocked credential placeholder DO_NOT_LEAK_SENTINEL must never be injected.",
+        "type": "constraint",
+        "source": "manual_edit",
+        "tags": ["credentials"],
+        "safetyFlags": ["secret"],
+        "redactionStatus": "blocked"
+      }
+    ],
+    "expectedIncluded": ["safe-credential-policy"],
+    "expectedExcluded": ["blocked-credential-note"]
+  },
+  "packetGolden": {
+    "task": "run v1 eval vitest checks without render jobs or live llm calls",
+    "memories": [
+      {
+        "label": "no-render-policy",
+        "content": "Do not run full render jobs during eval verification.",
+        "type": "command_policy",
+        "source": "user_explicit",
+        "severity": "high",
+        "tags": ["v1-eval"],
+        "metadata": {
+          "decision": "warn",
+          "commandPattern": "render",
+          "matchType": "substring"
+        }
+      },
+      {
+        "label": "deterministic-vitest-decision",
+        "content": "Use deterministic Vitest fixtures for V1 eval coverage.",
+        "type": "decision",
+        "source": "user_explicit",
+        "tags": ["v1-eval", "vitest"]
+      },
+      {
+        "label": "no-live-llm-attempt",
+        "content": "Generating eval expectations from live LLM calls is disallowed.",
+        "type": "failed_attempt",
+        "source": "agent_reported",
+        "tags": ["v1-eval", "llm"]
+      }
+    ]
+  },
+  "contextDelta": {
+    "task": "run package tests for the release branch",
+    "expectedMemoryAwareText": "Always use pnpm before running package tests.",
+    "memories": [
+      {
+        "label": "pnpm-context-rule",
+        "content": "Always use pnpm before running package tests.",
+        "type": "workflow_rule",
+        "source": "user_explicit",
+        "tags": ["package-manager", "tests"]
+      }
+    ]
+  }
+}

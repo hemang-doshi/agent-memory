@@ -10,6 +10,7 @@ import { proposeCandidate } from "../src/core/candidate-propose.js";
 import { rejectCandidate } from "../src/core/candidate-reject.js";
 import { initProject } from "../src/core/init-project.js";
 import { listMemories } from "../src/core/list-memories.js";
+import { recordEvent } from "../src/core/record-event.js";
 import { getSessionReceipt } from "../src/core/session-receipt.js";
 import { startSession } from "../src/core/session-start.js";
 import { cleanupWorkspace, createTempWorkspace } from "./helpers.js";
@@ -78,6 +79,36 @@ describe("candidate review", () => {
         })
       })
     );
+  });
+
+  test("approved candidate preserves linked evidence event IDs on memory metadata", async () => {
+    const cwd = await createTempWorkspace("agentmem-candidate-approve-event");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+    const session = await startSession({ cwd, task: "Approve event candidate" });
+    const event = await recordEvent({
+      cwd,
+      sessionId: session.sessionId,
+      type: "user_correction",
+      summary: "The user corrected npm install to pnpm add."
+    });
+    const candidate = await proposeCandidate({
+      cwd,
+      sessionId: session.sessionId,
+      type: "workflow_rule",
+      content: "Use pnpm add instead of npm install in this repo.",
+      evidence: "User correction during package install.",
+      evidenceEventId: event.eventId
+    });
+
+    const approved = await approveCandidate({ cwd, candidateId: candidate.candidateId });
+
+    expect(approved.candidate.evidenceEventIds).toEqual([event.eventId]);
+    expect(approved.memory.metadata).toMatchObject({
+      candidateId: candidate.candidateId,
+      evidenceEventIds: [event.eventId],
+      approvedFromCandidate: true
+    });
   });
 
   test("approved or rejected candidates cannot be approved", async () => {

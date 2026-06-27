@@ -3,6 +3,7 @@ import type { MemoryRecord } from "../domain/types.js";
 import { parseCommandPolicyMatchType, parsePreflightDecision } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
+import { excludeRelationSupersededMemories, isAgentVisibleMemory } from "./memory-eligibility.js";
 import { requireSession, writeProtocolReceipt } from "./protocol-receipts.js";
 
 function commandMatches(command: string, metadata: JsonRecord): boolean {
@@ -118,10 +119,12 @@ export async function preflightCommand({
       return result;
     }
 
-    const memories = loaded.repo.listMemories(loaded.project.projectId);
+    const memories = excludeRelationSupersededMemories(
+      loaded.repo.listMemories(loaded.project.projectId)
+    );
     const matched = memories.filter(
       (memory) =>
-        memory.status === "active" &&
+        isAgentVisibleMemory({ memory, config: loaded.context.config }) &&
         memory.type === "command_policy" &&
         commandMatches(command, memory.metadata)
     ).sort(comparePolicies);

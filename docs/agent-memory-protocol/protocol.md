@@ -1,239 +1,148 @@
 # Portable Agent Memory Protocol
 
-The protocol exists to make memory part of the agent execution loop without making memory the main workflow.
+Agent Memory is a local protocol layer for coding agents. It helps an agent recall useful project context, avoid known mistakes, preflight command policies, and leave an audit trail.
 
-The agent's main job remains:
+The agent still does the normal engineering work:
 
 1. understand the task
-2. plan the change
-3. edit code
-4. run checks
-5. ship a working result
+2. inspect relevant code
+3. plan the change
+4. edit
+5. verify
+6. report the result
 
-Agent Memory only appears at natural checkpoints where memory materially improves behavior.
+Memory appears only at checkpoints where it can change behavior.
 
-## Core answer
+## 1. Recall Before Planning
 
-Enforce the protocol through layered, portable obedience:
-
-```text
-repo instruction router
-+ skills pack
-+ CLI/MCP tools
-+ receipts
-+ soft gates
-+ optional hard gates where supported
-```
-
-The product should not ask the agent to think about memory constantly. Instead:
-
-```text
-At the few moments where memory matters, the agent has an obvious tool to call, a tiny router telling it when to call it, and a receipt proving whether it did.
-```
-
-## Protocol checkpoints
-
-### 1. Recall before planning
-
-Trigger:
-
-- task starts
-- non-trivial code change begins
-- user asks for implementation, debugging, refactor, migration, or review
-
-Tool:
+Use `retrieve` for raw memory matches or `inject` for a packet:
 
 ```bash
-agentmem pack "<task>" --files <known-files> --json
+agentmem retrieve "fix failing CLI tests" --file src/cli/main.ts --json
+agentmem inject "fix failing CLI tests" --file src/cli/main.ts --format markdown
+```
+
+With a session:
+
+```bash
+agentmem session start "fix failing CLI tests" --json
+agentmem inject "fix failing CLI tests" --session ses_123 --json
 ```
 
 Expected behavior:
 
-- Agent uses memory to shape the plan.
-- Agent does not dump the full pack unless the user asks.
-- Agent mentions only memories that materially affect the plan.
-- Receipt records that recall happened and which memory IDs were included.
+- use retrieved memory to shape the plan
+- mention only memory that materially affects the task
+- prefer explicit user instructions over memory when they conflict
+- treat stale, rejected, archived, and blocked memories as non-authoritative
 
-### 2. Preflight before risky action
+## 2. Preflight Risky Commands
 
-Trigger:
-
-- shell command that installs packages, changes git state, deletes files, runs expensive checks, runs deploys, runs full renders, modifies environment, or touches external services
-- later: file/path operations involving fragile files or protected modules
-
-Tool:
+Command policies are durable memory of type `command_policy`:
 
 ```bash
-agentmem preflight --command "<command>" --json
+agentmem policy "Avoid full render unless the user asks." \
+  --match "pnpm render" \
+  --decision warn \
+  --suggest "Run pnpm test first."
 ```
 
-Future tool:
+Before a risky command:
 
 ```bash
-agentmem preflight --file "<path>" --operation edit --json
+agentmem preflight --command "pnpm render" --session ses_123 --json
 ```
 
-Expected behavior:
+Current decisions are `allow`, `warn`, and `block`. A block only comes from an explicit command policy.
 
-- `allow`: proceed silently.
-- `warn`: adapt to safer path, explain briefly, or ask the user.
-- `block`: stop unless the user explicitly overrides.
+## 3. Record Evidence Events
 
-### 3. Observe outcomes
-
-Trigger:
-
-- command succeeds or fails
-- test result appears
-- build/lint/typecheck result appears
-- user correction happens
-- agent discovers a repo rule
-- agent repeats or avoids a known mistake
-
-Tool shape:
+Events are source material. They do not create trusted durable memory.
 
 ```bash
-agentmem event record --type <event_type> --json ...
+agentmem event record \
+  --session ses_123 \
+  --type test_result \
+  --summary "pnpm test passed after updating retrieval scoring." \
+  --json
 ```
 
-Observation events are evidence, not durable memory. They can later produce candidates.
+Supported user-facing event types are:
 
-### 4. Propose candidates
+- `evidence_recorded`
+- `command_result`
+- `test_result`
+- `user_correction`
+- `reusable_observation`
 
-Trigger:
+## 4. Propose Candidates
 
-- reusable failed attempt discovered
-- successful fix discovered
-- agent mistake occurred
-- user explicitly corrected the agent
-- new command/tool policy discovered
-- test result changes future workflow
-
-Tool shape:
+Agents can propose candidates, but candidates are untrusted until reviewed:
 
 ```bash
-agentmem candidate propose --type failed_attempt ...
-agentmem candidate propose --type known_fix ...
-agentmem candidate propose --type agent_mistake ...
+agentmem candidate propose \
+  --session ses_123 \
+  --type known_fix \
+  --content "Use retrieval metadata reasons when explaining packet matches." \
+  --evidence "Observed while fixing packet tests." \
+  --json
 ```
 
-Expected behavior:
+To link a recorded event as provenance, add `--evidence-event <event-id>` from the same session.
 
-- Agent proposes memory candidates, not trusted memory.
-- Candidates include source evidence, confidence, scope, and reason.
-- Candidates stay untrusted until reviewed or approved.
+Candidate proposals require evidence text, a linked evidence event, or both, and reject obvious secrets. A linked evidence event must exist in the current project and belong to the candidate session. Linked event IDs strengthen provenance because they point back to recorded command results, test results, user corrections, or reusable observations. Approval promotes a candidate to active memory:
 
-### 5. Review and manage
+```bash
+agentmem candidate list --status proposed --json
+agentmem candidate approve cand_abc123 --json
+agentmem candidate reject cand_def456 --reason "Too task-specific." --json
+```
 
-Trigger:
+## 5. Manage Memory
 
-- user invokes `/manage-mem`
-- end of session
-- many candidates accumulate
-- conflicts are detected
-- stale memory is detected
-
-Tool:
+`manage --plan` summarizes review work:
 
 ```bash
 agentmem manage --plan
 ```
 
-Expected behavior:
+It is intentionally non-interactive in the current CLI. It does not silently approve, merge, or delete memory.
 
-- show candidates
-- show conflicts
-- show possible stale memories
-- ask concise approval questions
-- promote, reject, merge, supersede, or mark stale
+## 6. Finish With Receipts
 
-## Enforcement levels
-
-Different coding agents and harnesses provide different levels of control. Agent Memory must degrade gracefully.
-
-### Level 1: Instruction router
-
-Installed into repo instruction files such as:
-
-- `AGENTS.md`
-- `CLAUDE.md`
-- `.cursor/rules/agent-memory.mdc`
-- agent-specific skill files
-
-This layer tells agents when to use memory.
-
-It is universal but advisory.
-
-### Level 2: Tool receipts
-
-Every memory tool call writes a receipt or event:
-
-- pack generated
-- preflight checked
-- warning triggered
-- candidate proposed
-- session completed
-
-This does not force obedience, but it makes memory usage visible.
-
-### Level 3: Soft gates
-
-The system can return warnings and blocks. Agents are instructed to obey them.
-
-This works even when the tool cannot intercept shell execution directly.
-
-### Level 4: Hard gates
-
-Only possible when the host allows it:
-
-- command proxy
-- MCP server
-- hooks
-- sandbox policy engine
-- wrapper CLI
-
-Hard gates should be optional. The product should not depend on them.
-
-## Receipt model
-
-Memory usage needs receipts.
-
-A final memory receipt should be able to say:
-
-```text
-Memory receipt:
-- session: ses_123
-- pack_loaded: yes
-- memories_injected: mem_12, mem_44, mem_91
-- preflight_checks: 2
-- warnings_triggered: 1
-- blocks_triggered: 0
-- candidates_proposed: 1
-- stale_candidates_detected: 1
+```bash
+agentmem session finish --session ses_123 --summary "Fixed CLI retrieval test." --json
+agentmem session receipt --session ses_123 --json
 ```
 
-Receipts should be generated from tool logs, not the agent's self-report.
+Receipts are generated by tool behavior. A receipt can include:
 
-## Authority model
+- session start and finish
+- packet load
+- preflight check
+- warning or block
+- candidate proposal
+- candidate review
 
-Memory types should not all have the same authority.
+## Authority Model
 
-| Memory type | Authority |
+| Record | Current behavior |
 |---|---|
-| user-confirmed repo rule | hard constraint |
-| command policy block | enforced where possible |
-| command policy warn | soft gate |
-| failed attempt | advisory, high priority |
-| successful fix | advisory |
-| test result observation | evidence only |
-| agent-proposed candidate | untrusted until approved |
-| stale/conflicted memory | not injected by default |
+| Active memory | Eligible for retrieval and packets. |
+| Command policy | Used by `preflight`; `warn` and `block` are surfaced. |
+| Candidate | Stored with evidence text and/or linked event IDs for review; not injected until approved. |
+| Rejected candidate | Retained for audit; not injected. |
+| Archived memory | Hidden from normal retrieval and packets. |
+| Stale memory | Hidden unless config includes stale memories. |
+| Blocked/redacted memory | Not injected. |
 
-## Invisible UX rule
+## Non-Goals For The Current CLI
 
-If the memory system has nothing important to say, it should stay quiet.
-
-- Allow preflight result: no need to mention.
-- Empty or low-value pack: no need to mention.
-- Candidate captured for later review: no immediate interruption unless important.
-- Warnings, blocks, conflicts, and meaningful candidates should surface.
+- no hosted service
+- no cloud sync
+- no default embeddings or LLM reranking
+- no MCP server
+- no hard command proxy
+- no guaranteed agent obedience
+- no live-agent benchmark
+- no interactive TUI or dashboard

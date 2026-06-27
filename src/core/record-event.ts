@@ -73,3 +73,27 @@ export async function recordEvidenceEvent({
     loaded.close();
   }
 }
+
+export async function recordEvent({
+  cwd,
+  type,
+  summary,
+  sessionId
+}: {
+  cwd: string;
+  type: string;
+  summary: string;
+  actor?: EventRecord["actor"];
+  sessionId?: string;
+}): Promise<EventRecord> {
+  if (!sessionId) {
+    throw new Error("Missing required option --session");
+  }
+
+  return recordEvidenceEvent({
+    cwd,
+    sessionId,
+    type: parseEvidenceEventType(type),
+    summary
+  });
+}

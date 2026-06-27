@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "agent-memory.packet.v1",
+  "project": "<project>",
+  "task": "run v1 eval vitest checks without render jobs or live llm calls",
+  "generatedAt": "<timestamp>",
+  "scope": "project",
+  "safety": "Secrets are blocked from trusted writes and blocked/redacted memories are not injected.",
+  "sections": [
+    {
+      "title": "Critical Constraints",
+      "items": [
+        {
+          "id": "<mem:no-render-policy>",
+          "type": "command_policy",
+          "content": "Do not run full render jobs during eval verification.",
+          "reason": "5 query tokens",
+          "score": 198,
+          "paths": [],
+          "tags": ["v1-eval"],
+          "confidence": "high",
+          "source": "user_explicit"
+        }
+      ]
+    },
+    {
+      "title": "Relevant Decisions",
+      "items": [
+        {
+          "id": "<mem:deterministic-vitest-decision>",
+          "type": "decision",
+          "content": "Use deterministic Vitest fixtures for V1 eval coverage.",
+          "reason": "tag match, 4 query tokens",
+          "score": 172,
+          "paths": [],
+          "tags": ["v1-eval", "vitest"],
+          "confidence": "high",
+          "source": "user_explicit"
+        }
+      ]
+    },
+    {
+      "title": "Known Failed Attempts",
+      "items": [
+        {
+          "id": "<mem:no-live-llm-attempt>",
+          "type": "failed_attempt",
+          "content": "Generating eval expectations from live LLM calls is disallowed.",
+          "reason": "tag match, 5 query tokens, regression prevention",
+          "score": 186,
+          "paths": [],
+          "tags": ["v1-eval", "llm"],
+          "confidence": "high",
+          "source": "agent_reported"
+        }
+      ]
+    }
+  ],
+  "markdown": "<normalized-markdown>",
+  "matchedMemoryIds": [
+    "<mem:no-render-policy>",
+    "<mem:no-live-llm-attempt>",
+    "<mem:deterministic-vitest-decision>"
+  ]
+}

@@ -22,3 +22,45 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: CLI help smoke
+        run: |
+          pnpm cli --help
+          node dist/cli/main.js --help
+      - name: Validate npm package contents
+        run: |
+          PACK_JSON="$(npm pack --dry-run --json)"
+          PACK_JSON="$PACK_JSON" node <<'NODE'
+          const pack = JSON.parse(process.env.PACK_JSON)[0];
+          const files = pack.files.map((file) => file.path).sort();
+          const required = [
+            "CHANGELOG.md",
+            "CONTRIBUTING.md",
+            "LICENSE",
+            "README.md",
+            "SECURITY.md",
+            "dist/cli/main.js",
+            "package.json"
+          ];
+          const forbiddenPrefixes = [
+            ".commandcode/",
+            ".github/",
+            "benchmarks/",
+            "docs/",
+            "src/",
+            "tests/"
+          ];
+          const forbiddenFiles = ["AGENTS.md", "diffchanges.md", "snapshot.md"];
+
+          const missing = required.filter((file) => !files.includes(file));
+          const forbidden = files.filter((file) =>
+            forbiddenFiles.includes(file) ||
+            forbiddenPrefixes.some((prefix) => file.startsWith(prefix))
+          );
+
+          if (missing.length > 0 || forbidden.length > 0) {
+            console.error(JSON.stringify({ missing, forbidden, files }, null, 2));
+            process.exit(1);
+          }
+
+          console.log(`Validated ${files.length} package files.`);
+          NODE

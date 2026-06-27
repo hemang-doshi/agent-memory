@@ -4,6 +4,7 @@ import process from "node:process";
 import { createMemory } from "../core/create-memory.js";
 import { doctor } from "../core/doctor.js";
 import { explainMemory } from "../core/explain-memory.js";
+import { forgetMemory } from "../core/forget-memory.js";
 import { generatePack } from "../core/generate-pack.js";
 import { initProject } from "../core/init-project.js";
 import { installInstructions } from "../core/install-instructions.js";
@@ -21,12 +22,15 @@ import { preflightCommand } from "../core/preflight-command.js";
 import { checkProtocolCompliance } from "../core/protocol-check.js";
 import { startProtocol } from "../core/protocol-start.js";
 import { recordEvidenceEvent } from "../core/record-event.js";
+import { retrieveMemories } from "../core/retrieve-memories.js";
+import { runV1Evals } from "../core/run-evals.js";
 import { searchMemories } from "../core/search-memories.js";
 import { finishSession } from "../core/session-finish.js";
 import { formatSessionReceiptText, getSessionReceipt } from "../core/session-receipt.js";
 import { startSession } from "../core/session-start.js";
 import { proposeCandidate } from "../core/candidate-propose.js";
 import { uninstallInstructions } from "../core/uninstall-instructions.js";
+import { updateMemory } from "../core/update-memory.js";
 import { formatTextList, formatTextPreflight } from "../formatters/output.js";
 import { formatDogfoodReport } from "../formatters/dogfood-report.js";
 import { formatProtocolCompliance } from "../formatters/protocol-check.js";
@@ -38,6 +42,7 @@ import {
   parseCommandPolicyMatchType,
   parseEvidenceEventType,
   parseMemorySource,
+  parseMemoryStatus,
   parseMemoryType,
   parsePreflightDecision,
   validateRegexPattern
@@ -82,6 +87,45 @@ function requireOption(parsed: ParsedArgs, name: string): string {
   return value;
 }
 
+function optionalOption(parsed: ParsedArgs, name: string): string | undefined {
+  const value = parsed.options[name];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function wantsJson(parsed: ParsedArgs): boolean {
+  return Boolean(parsed.options.json) || parsed.options.format === "json";
+}
+
+function parseStringList(parsed: ParsedArgs, name: string): string[] | undefined {
+  const value = parsed.options[name];
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function parseBooleanFlag(value: string | boolean | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return value !== "false";
+}
+
+function parseIntegerOption(parsed: ParsedArgs, name: string): number | undefined {
+  const value = parsed.options[name];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string" || !/^-?\d+$/.test(value)) {
+    throw new Error(`Invalid --${name}: expected an integer`);
+  }
+  return Number.parseInt(value, 10);
+}
+
 function render(value: unknown, asJson: boolean): void {
   const output = asJson ? JSON.stringify(value, null, 2) : String(value);
   process.stdout.write(`${output}\n`);
@@ -120,17 +164,21 @@ function helpText(): string {
     "  agentmem session start \"<task>\" [--json]",
     "  agentmem session finish --session <session-id> --summary \"...\" [--json]",
     "  agentmem session receipt --session <session-id> [--json]",
+    "  agentmem add <content> --type <type> [--source <source>] [--path <path>] [--tags a,b] [--pinned] [--priority n]",
+    "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b] [--pinned] [--priority n]",
     "  agentmem protocol start \"<task>\" [--json]",
     "  agentmem protocol check --session <session-id> [--json]",
     "  agentmem dogfood report --session <session-id> [--json]",
     "  agentmem event record --session <session-id> --type <type> --summary \"...\" [--command \"...\"] [--exit-code 1] [--json]",
     "  agentmem event list --session <session-id> [--json]",
-    "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]",
     "  agentmem decision <content>",
     "  agentmem failed <content>",
-    "  agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block]",
-    "  agentmem pack <task> [--session <session-id>] [--json]",
+    "  agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block] [--suggest <action>]",
+    "  agentmem retrieve <task> [--file <path>] [--command <command>] [--limit n] [--json]",
+    "  agentmem inject <task> [--session <session-id>] [--file <path>] [--command <command>] [--json|--format markdown]",
+    "  agentmem pack <task> [--session <session-id>] [--file <path>] [--command <command>] [--json]",
     "  agentmem preflight --command <command> [--session <session-id>] [--json]",
+    "  agentmem eval [--json]",
     "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" [--evidence \"...\"] [--evidence-event <event-id>] [--json]",
     "  agentmem candidate list [--status proposed] [--json]",
     "  agentmem candidate approve <candidate-id> [--json]",
@@ -140,6 +188,8 @@ function helpText(): string {
     "  agentmem benchmark run --all [--json]",
     "  agentmem search <query> [--type <type>] [--json]",
     "  agentmem list [--type <type>] [--all] [--json]",
+    "  agentmem update <memory-id> --reason <reason> [--content \"...\"] [--type <type>] [--status <status>] [--tags a,b] [--paths a,b] [--pinned true|false] [--priority n]",
+    "  agentmem forget <memory-id> --reason <reason>",
     "  agentmem stale <memory-id> --reason <reason>",
     "  agentmem explain <memory-id>",
     ""
@@ -147,7 +197,10 @@ function helpText(): string {
 }
 
 async function handleRemember(command: string, parsed: ParsedArgs, cwd: string): Promise<void> {
-  const content = parsed.positionals.join(" ").trim();
+  const positionals = command === "policy" && parsed.positionals[0] === "add"
+    ? parsed.positionals.slice(1)
+    : parsed.positionals;
+  const content = positionals.join(" ").trim();
   if (!content) {
     throw new Error(`${command} requires content`);
   }
@@ -159,7 +212,7 @@ async function handleRemember(command: string, parsed: ParsedArgs, cwd: string):
     source: "cli"
   };
 
-  if (command === "remember") {
+  if (command === "remember" || command === "add") {
     base.type = parseMemoryType(requireOption(parsed, "type"));
     base.source =
       parsed.options.source === undefined
@@ -201,12 +254,23 @@ async function handleRemember(command: string, parsed: ParsedArgs, cwd: string):
     base.paths = [parsed.options.path];
   }
 
-  if (typeof parsed.options.tags === "string") {
-    base.tags = parsed.options.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+  const tags = parseStringList(parsed, "tags") ?? parseStringList(parsed, "tag");
+  if (tags) {
+    base.tags = tags;
+  }
+
+  const pinned = parseBooleanFlag(parsed.options.pinned);
+  if (pinned !== undefined) {
+    base.pinned = pinned;
+  }
+
+  const priority = parseIntegerOption(parsed, "priority");
+  if (priority !== undefined) {
+    base.priority = priority;
   }
 
   const result = await createMemory(base);
-  const asJson = Boolean(parsed.options.json);
+  const asJson = wantsJson(parsed);
   render(asJson ? result : formatCreatedMemory(result), asJson);
 }
 
@@ -220,7 +284,7 @@ async function main(): Promise<void> {
   }
 
   const parsed = parseArgs(rest);
-  const asJson = Boolean(parsed.options.json);
+  const asJson = wantsJson(parsed);
 
   switch (command) {
     case "init": {
@@ -242,6 +306,7 @@ async function main(): Promise<void> {
       );
       return;
     }
+    case "add":
     case "remember":
     case "decision":
     case "failed":
@@ -497,18 +562,42 @@ async function main(): Promise<void> {
       render(asJson ? result : formatBenchmarkReport(result), asJson);
       return;
     }
-    case "pack": {
+    case "pack":
+    case "inject": {
       const task = parsed.positionals.join(" ").trim();
       if (!task) {
-        throw new Error("pack requires a task description");
+        throw new Error(`${command} requires a task description`);
       }
 
       const result = await generatePack({
         cwd,
         task,
+        files: parseStringList(parsed, "files") ?? parseStringList(parsed, "file"),
+        command: typeof parsed.options.command === "string" ? parsed.options.command : undefined,
         sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
       });
       render(asJson ? result : result.markdown, asJson);
+      return;
+    }
+    case "retrieve": {
+      const task = parsed.positionals.join(" ").trim();
+      if (!task) {
+        throw new Error("retrieve requires a task description");
+      }
+
+      const memories = await retrieveMemories({
+        cwd,
+        task,
+        files: parseStringList(parsed, "files") ?? parseStringList(parsed, "file"),
+        command: typeof parsed.options.command === "string" ? parsed.options.command : undefined,
+        maxResults: parseIntegerOption(parsed, "limit")
+      });
+      render(
+        asJson
+          ? { memories, matchedMemoryIds: memories.map((memory) => memory.id) }
+          : formatTextList(memories),
+        asJson
+      );
       return;
     }
     case "search": {
@@ -557,6 +646,57 @@ async function main(): Promise<void> {
         reason: requireOption(parsed, "reason")
       });
       render(asJson ? { updated: true, memoryId, status: "stale" } : `Marked ${memoryId} stale.`, asJson);
+      return;
+    }
+    case "update": {
+      const memoryId = parsed.positionals[0];
+      if (!memoryId) {
+        throw new Error("update requires a memory id");
+      }
+
+      const result = await updateMemory({
+        cwd,
+        memoryId,
+        reason: requireOption(parsed, "reason"),
+        content: typeof parsed.options.content === "string" ? parsed.options.content : undefined,
+        type: parsed.options.type === undefined ? undefined : parseMemoryType(parsed.options.type),
+        status: parsed.options.status === undefined ? undefined : parseMemoryStatus(parsed.options.status),
+        tags: parseStringList(parsed, "tags") ?? parseStringList(parsed, "tag"),
+        paths: parseStringList(parsed, "paths") ?? parseStringList(parsed, "path"),
+        pinned: parseBooleanFlag(parsed.options.pinned),
+        priority: parseIntegerOption(parsed, "priority")
+      });
+      render(asJson ? result : `Updated ${result.id}.`, asJson);
+      return;
+    }
+    case "forget": {
+      const memoryId = parsed.positionals[0];
+      if (!memoryId) {
+        throw new Error("forget requires a memory id");
+      }
+
+      const result = await forgetMemory({
+        cwd,
+        memoryId,
+        reason: requireOption(parsed, "reason")
+      });
+      render(asJson ? result : `Archived ${result.id}.`, asJson);
+      return;
+    }
+    case "eval": {
+      const result = await runV1Evals();
+      render(
+        asJson
+          ? result
+          : [
+              `${result.name}: ${result.passed ? "pass" : "fail"}`,
+              ...result.checks.map((item) => `- ${item.status}: ${item.name} - ${item.details}`)
+            ].join("\n"),
+        asJson
+      );
+      if (!result.passed) {
+        process.exitCode = 1;
+      }
       return;
     }
     case "explain": {
