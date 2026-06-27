@@ -3,7 +3,7 @@ import type { MemoryRecord, RetrieveMemoriesInput } from "../domain/types.js";
 import { parseCommandPolicyMatchType } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
-import { isAgentVisibleMemory } from "./memory-eligibility.js";
+import { excludeRelationSupersededMemories, isAgentVisibleMemory } from "./memory-eligibility.js";
 
 function tokenize(text: string): string[] {
   return Array.from(new Set(text
@@ -195,15 +195,6 @@ function describeReason(signals: ScoredMemory["signals"]): string {
   return reasons.join(", ") || "eligible memory";
 }
 
-function excludeSuperseded(memories: MemoryRecord[]): MemoryRecord[] {
-  const supersededIds = new Set(
-    memories
-      .map((memory) => memory.supersedesMemoryId)
-      .filter((memoryId): memoryId is string => typeof memoryId === "string" && memoryId.length > 0)
-  );
-  return memories.filter((memory) => !supersededIds.has(memory.id));
-}
-
 function resolveConflictGroups(scored: ScoredMemory[]): ScoredMemory[] {
   const winners = new Map<string, ScoredMemory>();
   const ungrouped: ScoredMemory[] = [];
@@ -279,7 +270,9 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
     const files = input.files ?? [];
     const queryTokens = tokenize(`${input.task} ${input.command ?? ""}`);
     const now = Date.now();
-    const memories = excludeSuperseded(loaded.repo.listMemories(loaded.project.projectId));
+    const memories = excludeRelationSupersededMemories(
+      loaded.repo.listMemories(loaded.project.projectId)
+    );
 
     const scored = memories
       .filter((memory) =>

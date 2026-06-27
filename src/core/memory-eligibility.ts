@@ -38,3 +38,12 @@ export function isAgentVisibleMemory({
 
   return true;
 }
+
+export function excludeRelationSupersededMemories(memories: MemoryRecord[]): MemoryRecord[] {
+  const supersededIds = new Set(
+    memories
+      .map((memory) => memory.supersedesMemoryId)
+      .filter((memoryId): memoryId is string => typeof memoryId === "string" && memoryId.length > 0)
+  );
+  return memories.filter((memory) => !supersededIds.has(memory.id));
+}

@@ -235,6 +235,43 @@ describe("retrieval and preflight", () => {
     expect(result.suggestedAction).toBe("Use pnpm add instead.");
   });
 
+  test("preflight ignores command policies superseded by another memory relation", async () => {
+    const cwd = await createTempWorkspace("agentmem-preflight-relation-superseded");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const oldPolicy = await createMemory({
+      cwd,
+      content: "Block npm install until the package policy is clarified.",
+      type: "command_policy",
+      source: "user_explicit",
+      metadata: {
+        decision: "block",
+        commandPattern: "npm install",
+        matchType: "substring"
+      }
+    });
+
+    const replacement = await createMemory({
+      cwd,
+      content: "Warn on npm install because this repo prefers pnpm.",
+      type: "command_policy",
+      source: "user_explicit",
+      supersedesMemoryId: oldPolicy.id,
+      metadata: {
+        decision: "warn",
+        commandPattern: "npm install",
+        matchType: "substring",
+        suggestedAction: "Use pnpm add instead."
+      }
+    });
+
+    const result = await preflightCommand({ cwd, command: "npm install zod" });
+    expect(result.decision).toBe("warn");
+    expect(result.matchedMemoryIds).toEqual([replacement.id]);
+    expect(result.message).toBe("Warn on npm install because this repo prefers pnpm.");
+  });
+
   test("invalid stored regex does not crash preflight", async () => {
     const cwd = await createTempWorkspace("agentmem-preflight-regex");
     workspaces.push(cwd);
