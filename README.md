@@ -127,6 +127,23 @@ agentmem protocol check --session "$SESSION"
 `protocol start` does not finish the session, run preflights, record events, or
 propose candidates automatically.
 
+## Dogfood Reports
+
+Generate a local dogfood report for a memory-aware implementation session:
+
+```bash
+agentmem dogfood report --session ses_x
+agentmem dogfood report --session ses_x --json
+```
+
+Dogfood reports are read-only summaries derived from protocol compliance data.
+They show whether the protocol completed and whether useful dogfood signals
+appeared, such as memory injection, preflight use, evidence capture, and
+candidate learning.
+
+A report does not create memory, write receipts, or judge product usefulness
+automatically. It helps review real dogfood sessions.
+
 ## Candidate Review
 
 Agents can propose memory candidates, but candidates are untrusted until
@@ -189,6 +206,7 @@ project's `.agent-memory` database.
 - `agentmem session receipt --session <session-id> [--json]`
 - `agentmem protocol start "<task>" [--json]`
 - `agentmem protocol check --session <session-id> [--json]`
+- `agentmem dogfood report --session <session-id> [--json]`
 - `agentmem event record --session <session-id> --type <type> --summary "..." [--command "..."] [--exit-code 1] [--json]`
 - `agentmem event list --session <session-id> [--json]`
 - `agentmem remember "<content>" --type <type>`
