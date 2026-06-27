@@ -201,6 +201,16 @@ export interface ProtocolComplianceReport {
   notes: string[];
 }
 
+export interface ProtocolStartResult {
+  sessionId: string;
+  task: string;
+  pack: {
+    markdown: string;
+    matchedMemoryIds: string[];
+  };
+  nextSteps: string[];
+}
+
 export interface MemoryCandidateRecord {
   candidateId: string;
   projectId: string;

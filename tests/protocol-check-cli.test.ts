@@ -90,7 +90,7 @@ describe("protocol check CLI", () => {
     workspaces.push(cwd);
     await runCli(["init"], cwd);
 
-    await expect(runCli(["protocol", "start", "Task"], cwd)).rejects.toMatchObject({
+    await expect(runCli(["protocol", "launch", "Task"], cwd)).rejects.toMatchObject({
       stderr: expect.stringContaining("Unknown protocol command. Run `agentmem help` for usage.")
     });
   });

@@ -18,6 +18,7 @@ import { formatManagePlanText, getManagePlan } from "../core/manage-plan.js";
 import { markMemoryStale } from "../core/mark-memory-stale.js";
 import { preflightCommand } from "../core/preflight-command.js";
 import { checkProtocolCompliance } from "../core/protocol-check.js";
+import { startProtocol } from "../core/protocol-start.js";
 import { recordEvidenceEvent } from "../core/record-event.js";
 import { searchMemories } from "../core/search-memories.js";
 import { finishSession } from "../core/session-finish.js";
@@ -27,6 +28,7 @@ import { proposeCandidate } from "../core/candidate-propose.js";
 import { uninstallInstructions } from "../core/uninstall-instructions.js";
 import { formatTextList, formatTextPreflight } from "../formatters/output.js";
 import { formatProtocolCompliance } from "../formatters/protocol-check.js";
+import { formatProtocolStart } from "../formatters/protocol-start.js";
 import type { CreateMemoryInput, MemoryRecord } from "../domain/types.js";
 import {
   parseCandidateStatus,
@@ -116,6 +118,7 @@ function helpText(): string {
     "  agentmem session start \"<task>\" [--json]",
     "  agentmem session finish --session <session-id> --summary \"...\" [--json]",
     "  agentmem session receipt --session <session-id> [--json]",
+    "  agentmem protocol start \"<task>\" [--json]",
     "  agentmem protocol check --session <session-id> [--json]",
     "  agentmem event record --session <session-id> --type <type> --summary \"...\" [--command \"...\"] [--exit-code 1] [--json]",
     "  agentmem event list --session <session-id> [--json]",
@@ -300,6 +303,17 @@ async function main(): Promise<void> {
     }
     case "protocol": {
       const subcommand = parsed.positionals[0];
+      if (subcommand === "start") {
+        const task = parsed.positionals.slice(1).join(" ").trim();
+        if (!task) {
+          throw new Error("protocol start requires a task description");
+        }
+
+        const result = await startProtocol({ cwd, task });
+        render(asJson ? result : formatProtocolStart(result), asJson);
+        return;
+      }
+
       if (subcommand === "check") {
         const result = await checkProtocolCompliance({
           cwd,
