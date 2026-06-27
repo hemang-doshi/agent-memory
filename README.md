@@ -1,133 +1,196 @@
-# Agent Memory Preflight
+# Agent Memory
 
-Local-first project memory and preflight CLI for coding agents.
+Local-first project memory and protocol receipts for coding agents.
+
+Agent Memory stores reviewed project rules, decisions, command policies, failed attempts, fixes, and other reusable lessons in a local SQLite database under `.agent-memory/`. Agents can retrieve that context before planning, inject a compact memory packet, preflight risky commands, propose untrusted memory candidates, and produce receipts that show what happened.
+
+The project is CLI-first. It does not require a hosted service, cloud sync, embeddings, an MCP server, or a dashboard.
 
 ## What It Does
 
-`agentmem` stores project-scoped memories such as decisions, failed attempts, workflow rules, and command policies in a local SQLite database. It can then:
+- Creates local project state with `agentmem init`.
+- Stores typed, project-scoped memories with `add`, `decision`, `failed`, and `policy`.
+- Retrieves relevant memory with deterministic local scoring.
+- Builds markdown and structured JSON memory packets with `inject` or `pack`.
+- Checks command policies before commands with `preflight`.
+- Records sessions, protocol receipts, and evidence events.
+- Lets agents propose memory candidates that must be reviewed before becoming trusted memory.
+- Archives memory non-destructively with `forget`.
 
-- generate compact markdown memory packs for a task
-- search and explain stored memories
-- warn before risky commands repeat known mistakes
-- record protocol receipts that prove an agent started a session, loaded memory, preflighted commands, proposed candidates, and finished with an audit summary
+Agent-generated learning is not automatically trusted. Durable memory should come from explicit user action or reviewed candidates.
 
-The current MVP is CLI-first. MCP integration is intentionally deferred.
+## Requirements
 
-Project memory state is created only by `agentmem init`. Other commands require an
-existing `.agent-memory/config.json` and `.agent-memory/memory.db`.
+- Node.js 22 or newer.
+- pnpm.
+
+This repository currently uses `node:sqlite`, so older Node.js versions are not supported.
 
 ## Quick Start
 
+From this repository:
+
 ```bash
-pnpm install
-pnpm test
+pnpm install --frozen-lockfile
+pnpm build
 pnpm cli init
-pnpm cli decision "Use reusable component library for reel scenes."
-pnpm cli policy "Do not run npm run render unless explicitly requested." \
-  --match "npm run render" \
-  --decision warn \
-  --suggest "Run pnpm test instead."
-pnpm cli pack "Implement the next reel scene"
-pnpm cli preflight --command "npm run render"
+pnpm cli install-instructions
+pnpm cli add "Use pnpm for package operations." --type workflow_rule --tag package-manager
+pnpm cli retrieve "update package operations workflow" --file package.json --json
+pnpm cli inject "update package operations workflow" --format markdown
+pnpm cli preflight --command "pnpm test" --json
 ```
 
-## Protocol Spine v0.2-alpha
-
-The v0.2-alpha slice adds a local audit spine around the existing memory and
-preflight workflow:
+After package installation, the binary name is `agentmem`:
 
 ```bash
-pnpm cli install-instructions
-pnpm cli doctor --json
+agentmem init
+agentmem install-instructions
+agentmem add "Use pnpm for package operations." --type workflow_rule --tag package-manager
+agentmem inject "update package operations workflow" --format markdown
+```
 
-SESSION=$(pnpm cli session start "Implement protocol spine smoke test" --json \
+## Agent Workflow
+
+Use memory at natural checkpoints:
+
+```bash
+SESSION=$(agentmem session start "Fix failing CLI tests" --json \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
 
-pnpm cli pack "Implement protocol spine smoke test" --session "$SESSION" --json
-pnpm cli preflight --command "npm run render" --session "$SESSION" --json
-pnpm cli candidate propose \
+agentmem inject "Fix failing CLI tests" --session "$SESSION" --file src/cli/main.ts --json
+agentmem preflight --command "pnpm test" --session "$SESSION" --json
+agentmem event record --session "$SESSION" --type test_result --summary "pnpm test passed." --json
+agentmem candidate propose \
   --session "$SESSION" \
-  --type failed_attempt \
-  --content "Reusable lesson learned." \
-  --evidence "Observed during this implementation." \
+  --type known_fix \
+  --content "Reusable repo-specific lesson." \
+  --evidence "Evidence from the command, test, or user correction." \
   --json
-pnpm cli session finish --session "$SESSION" --summary "Smoke test complete." --json
-pnpm cli session receipt --session "$SESSION" --json
+agentmem session finish --session "$SESSION" --summary "Task completed." --json
+agentmem session receipt --session "$SESSION" --json
 ```
 
-`session receipt` reads from SQLite protocol receipts, not from agent
-self-reporting. Candidate proposals are stored as untrusted
-`memory_candidates` records and do not create trusted durable memories.
-
-## Candidate Review
-
-Agents can propose memory candidates, but candidates are untrusted until
-reviewed.
-
-```bash
-agentmem candidate propose --session ses_x --type failed_attempt --content "..." --evidence "..."
-agentmem manage --plan
-agentmem candidate approve cand_x
-agentmem candidate reject cand_y --reason "Too task-specific."
-```
-
-Approved candidates become active memory and can appear in future packs.
-Rejected candidates are retained for audit but are never injected.
+Receipts are written by Agent Memory commands, not by agent self-report. They can show session start/finish, packet loading, preflight checks, warnings or blocks, candidate proposals, and candidate reviews.
 
 ## Commands
 
-- `agentmem init [--git-init] [--json]`
-- `agentmem install-instructions`
-- `agentmem uninstall-instructions`
-- `agentmem doctor [--json]`
-- `agentmem session start "<task>" [--json]`
-- `agentmem session finish --session <session-id> --summary "..." [--json]`
-- `agentmem session receipt --session <session-id> [--json]`
-- `agentmem remember "<content>" --type <type>`
-- `agentmem decision "<content>"`
-- `agentmem failed "<content>"`
-- `agentmem policy "<content>" --match "<pattern>"`
-- `agentmem pack "<task>" [--session <session-id>] [--json]`
-- `agentmem search "<query>" [--json]`
-- `agentmem preflight --command "<command>" [--session <session-id>] [--json]`
-- `agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." [--json]`
-- `agentmem candidate list [--status proposed] [--json]`
-- `agentmem candidate approve <candidate-id> [--json]`
-- `agentmem candidate reject <candidate-id> --reason "..." [--json]`
-- `agentmem manage --plan [--json]`
-- `agentmem list [--type <type>] [--all]`
-- `agentmem stale <memory-id> --reason "<reason>"`
-- `agentmem explain <memory-id> [--json]`
+```text
+agentmem init [--git-init] [--json]
+agentmem install-instructions
+agentmem uninstall-instructions
+agentmem doctor [--json]
+agentmem session start "<task>" [--json]
+agentmem session finish --session <session-id> --summary "..." [--json]
+agentmem session receipt --session <session-id> [--json]
+agentmem add <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]
+agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]
+agentmem decision <content>
+agentmem failed <content>
+agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block]
+agentmem retrieve <task> [--file <path>] [--command <command>] [--json]
+agentmem inject <task> [--session <session-id>] [--file <path>] [--command <command>] [--json|--format markdown]
+agentmem pack <task> [--session <session-id>] [--json]
+agentmem preflight --command <command> [--session <session-id>] [--json]
+agentmem event record --type <type> --summary "..." [--session <session-id>] [--json]
+agentmem eval [--json]
+agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." [--json]
+agentmem candidate list [--status proposed] [--json]
+agentmem candidate approve <candidate-id> [--json]
+agentmem candidate reject <candidate-id> --reason "..." [--json]
+agentmem manage --plan [--json]
+agentmem search <query> [--type <type>] [--json]
+agentmem list [--type <type>] [--all] [--json]
+agentmem update <memory-id> --reason <reason> [--content "..."] [--type <type>] [--status <status>] [--tags a,b] [--paths a,b] [--pinned true|false] [--priority n]
+agentmem forget <memory-id> --reason <reason>
+agentmem stale <memory-id> --reason <reason>
+agentmem explain <memory-id>
+```
 
-`agentmem init` uses the Git root when run inside a repository and adds
-`.agent-memory/` to `.git/info/exclude` without changing `.gitignore`. Outside
-Git, it initializes in the current directory and prints a warning. It runs
-`git init -b main` only when `--git-init` is passed.
+Compatibility aliases remain available: `remember` for `add`, and `pack` for `inject`.
+
+## Memory Types
+
+Current durable memory types include:
+
+- `decision`
+- `constraint`
+- `preference`
+- `command_policy`
+- `failed_attempt`
+- `known_fix`
+- `agent_mistake`
+- `fragile_file`
+- `workflow_rule`
+- `architecture_note`
+- `design_rule`
+- `rejected_approach`
+- `pending_task`
+- `tool_quirk`
+
+Candidate proposal currently supports `failed_attempt`, `known_fix`, `agent_mistake`, `workflow_rule`, and `command_policy`.
+
+## Retrieval
+
+Retrieval is deterministic and local. It scores active eligible memories using:
+
+- task token overlap
+- file path matches
+- tag matches
+- command policy matches
+- type, confidence, and severity priority
+- pinned and priority metadata
+- recency and use count
+- failed-attempt, mistake, known-fix, and rejected-approach boosts
+- basic supersession and conflict-group handling
+
+Archived, rejected, superseded, blocked/redacted, expired, and secret-flagged memories are excluded from normal packets. Stale and unverified memories are controlled by project config.
+
+## Safety Model
+
+Agent Memory is designed for local project state, not secret management.
+
+- `.agent-memory/` is local state and should not be committed.
+- Obvious secrets are rejected in trusted memory writes and candidate proposals.
+- Candidate memory is untrusted until approved.
+- Rejected candidates stay available for audit but are not injected.
+- `forget` archives memory instead of deleting it.
 
 ## Repository Layout
 
-- `src/cli/`: command parsing and terminal output
-- `src/core/`: use cases such as init, create-memory, retrieval, pack generation, and preflight
-- `src/db/`: SQLite schema and repository
-- `src/domain/`: shared enums, record shapes, defaults, and guards
-- `src/formatters/`: markdown and text renderers
-- `tests/`: unit and smoke tests
-- `benchmarks/fixtures/`: replayable seeded scenarios
+- `src/cli/`: command parsing and terminal output.
+- `src/core/`: project use cases such as init, retrieval, packet generation, sessions, candidates, and preflight.
+- `src/db/`: SQLite schema and repository access.
+- `src/domain/`: domain enums, record shapes, defaults, guards, and validators.
+- `src/formatters/`: markdown and text formatters.
+- `tests/`: unit, CLI, protocol, and smoke tests.
+- `benchmarks/fixtures/`: deterministic benchmark fixtures.
+- `docs/`: protocol, architecture, testing, and release documentation.
+- `examples/`: runnable documentation examples.
 
-## Current Limitations
-
-- no MCP server yet
-- no `edit` command yet
-- no candidate merge/supersede workflow yet
-- no interactive memory management UI yet
-- no automatic stale-memory conflict detection from repo state
-- no path-scoped edit preflight yet
-- no global shared memory database
-
-## Verification
+## Development
 
 ```bash
+pnpm install --frozen-lockfile
 pnpm test
 pnpm typecheck
 pnpm build
 ```
+
+CLI smoke tests can use:
+
+```bash
+pnpm cli <command>
+```
+
+Run the deterministic local V1 eval harness with:
+
+```bash
+pnpm cli eval --json
+```
+
+## Current V1 Release Status
+
+This branch contains the V1 implementation and release-hardening work. The README documents the current CLI behavior visible in this branch, including deterministic evals, package metadata hardening, and CI templates. Final release status is recorded in `docs/v1-release/V1_RELEASE_VERIFICATION.md`.
+
+See [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/testing.md), and [docs/v1-release/V1_RELEASE_NOTES_DRAFT.md](docs/v1-release/V1_RELEASE_NOTES_DRAFT.md) for release documentation.

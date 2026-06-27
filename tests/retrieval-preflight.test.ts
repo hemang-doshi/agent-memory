@@ -274,6 +274,155 @@ describe("retrieval and preflight", () => {
     );
   });
 
+  test("retrieval includes pinned memories and records score/use metadata", async () => {
+    const cwd = await createTempWorkspace("agentmem-retrieval-pinned");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const pinned = await createMemory({
+      cwd,
+      content: "Always use pnpm in this repository.",
+      type: "workflow_rule",
+      source: "user_explicit",
+      pinned: true,
+      priority: 2
+    });
+    await createMemory({
+      cwd,
+      content: "Use route handlers for API endpoints.",
+      type: "architecture_note",
+      source: "cli"
+    });
+
+    const results = await retrieveMemories({ cwd, task: "implement a database migration" });
+    const matchedPinned = results.find((memory) => memory.id === pinned.id);
+    expect(matchedPinned?.metadata.retrieval).toMatchObject({
+      reason: expect.stringContaining("pinned")
+    });
+
+    const db = new DatabaseSync(`${cwd}/.agent-memory/memory.db`);
+    const row = db
+      .prepare("SELECT use_count, last_retrieved_at FROM memories WHERE id = ?")
+      .get(pinned.id) as { use_count: number; last_retrieved_at: string | null };
+    db.close();
+    expect(row.use_count).toBe(1);
+    expect(row.last_retrieved_at).toEqual(expect.any(String));
+  });
+
+  test("retrieval guarantees pinned and priority memories before normal matches under limit", async () => {
+    const cwd = await createTempWorkspace("agentmem-retrieval-guaranteed");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    await createMemory({
+      cwd,
+      content: "Pinned repository rule with no query overlap.",
+      type: "workflow_rule",
+      source: "user_explicit",
+      pinned: true
+    });
+    await createMemory({
+      cwd,
+      content: "High priority repository rule with no query overlap.",
+      type: "workflow_rule",
+      source: "user_explicit",
+      priority: 3
+    });
+
+    for (let index = 0; index < 5; index += 1) {
+      await createMemory({
+        cwd,
+        content: `database migration query overlap regular ${index}`,
+        type: "decision",
+        source: "cli"
+      });
+    }
+
+    const results = await retrieveMemories({
+      cwd,
+      task: "database migration query overlap",
+      maxResults: 2
+    });
+
+    expect(results.map((memory) => memory.content)).toEqual([
+      "Pinned repository rule with no query overlap.",
+      "High priority repository rule with no query overlap."
+    ]);
+  });
+
+  test("retrieval excludes blocked and redacted memories from packs", async () => {
+    const cwd = await createTempWorkspace("agentmem-retrieval-redacted");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    await createMemory({
+      cwd,
+      content: "Visible package manager rule.",
+      type: "workflow_rule",
+      source: "user_explicit"
+    });
+    await createMemory({
+      cwd,
+      content: "Redacted token sentinel should never appear.",
+      type: "workflow_rule",
+      source: "user_explicit",
+      redactionStatus: "redacted",
+      priority: 5
+    });
+
+    const pack = await generatePack({ cwd, task: "package manager token sentinel" });
+    expect(pack.markdown).toContain("Visible package manager rule.");
+    expect(pack.markdown).not.toContain("Redacted token sentinel");
+    expect(JSON.stringify(pack.sections)).not.toContain("Redacted token sentinel");
+  });
+
+  test("retrieval suppresses superseded and lower-ranked conflict memories", async () => {
+    const cwd = await createTempWorkspace("agentmem-retrieval-conflicts");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const oldRule = await createMemory({
+      cwd,
+      content: "Use npm for package installs.",
+      type: "workflow_rule",
+      source: "cli",
+      tags: ["package-manager"]
+    });
+    await createMemory({
+      cwd,
+      content: "Use pnpm for package installs.",
+      type: "workflow_rule",
+      source: "user_explicit",
+      tags: ["package-manager"],
+      supersedesMemoryId: oldRule.id
+    });
+    await createMemory({
+      cwd,
+      content: "Prefer npm scripts for test runs.",
+      type: "workflow_rule",
+      source: "cli",
+      tags: ["tests"],
+      conflictGroup: "test-runner",
+      priority: 0
+    });
+    await createMemory({
+      cwd,
+      content: "Prefer pnpm for test runs.",
+      type: "workflow_rule",
+      source: "user_explicit",
+      tags: ["tests"],
+      conflictGroup: "test-runner",
+      priority: 2
+    });
+
+    const results = await retrieveMemories({ cwd, task: "package-manager tests" });
+    const contents = results.map((memory) => memory.content);
+    expect(contents).toContain("Use pnpm for package installs.");
+    expect(contents).not.toContain("Use npm for package installs.");
+    expect(contents).toContain("Prefer pnpm for test runs.");
+    expect(contents).not.toContain("Prefer npm scripts for test runs.");
+  });
+
   test("pack includes every supported memory type", async () => {
     const cwd = await createTempWorkspace("agentmem-pack-types");
     workspaces.push(cwd);

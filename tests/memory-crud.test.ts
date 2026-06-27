@@ -2,10 +2,12 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { createMemory } from "../src/core/create-memory.js";
 import { explainMemory } from "../src/core/explain-memory.js";
+import { forgetMemory } from "../src/core/forget-memory.js";
 import { initProject } from "../src/core/init-project.js";
 import { listMemories } from "../src/core/list-memories.js";
 import { markMemoryStale } from "../src/core/mark-memory-stale.js";
 import { searchMemories } from "../src/core/search-memories.js";
+import { updateMemory } from "../src/core/update-memory.js";
 import { cleanupWorkspace, createTempWorkspace } from "./helpers.js";
 
 const workspaces: string[] = [];
@@ -119,5 +121,81 @@ describe("memory CRUD", () => {
     const explanation = await explainMemory({ cwd, memoryId: memory.id });
     expect(explanation.memory.metadata.staleReason).toBe("Project moved to pnpm.");
     expect(explanation.relatedEvents.some((event) => event.eventType === "memory_marked_stale")).toBe(true);
+  });
+
+  test("updates and forgets memories without deleting audit history", async () => {
+    const cwd = await createTempWorkspace("agentmem-update-forget");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const memory = await createMemory({
+      cwd,
+      content: "Use npm for package operations.",
+      type: "workflow_rule",
+      source: "user_explicit"
+    });
+
+    const updated = await updateMemory({
+      cwd,
+      memoryId: memory.id,
+      reason: "Project standardized on pnpm.",
+      content: "Use pnpm for package operations.",
+      pinned: true,
+      priority: 2
+    });
+    expect(updated.content).toBe("Use pnpm for package operations.");
+    expect(updated.pinned).toBe(true);
+    expect(updated.priority).toBe(2);
+
+    const archived = await forgetMemory({
+      cwd,
+      memoryId: memory.id,
+      reason: "Superseded by a newer package-manager memory."
+    });
+    expect(archived.status).toBe("archived");
+
+    const allMemories = await listMemories({ cwd, activeOnly: false });
+    expect(allMemories[0]?.id).toBe(memory.id);
+    expect(allMemories[0]?.status).toBe("archived");
+
+    const explanation = await explainMemory({ cwd, memoryId: memory.id });
+    expect(explanation.relatedEvents.some((event) => event.eventType === "memory_updated")).toBe(true);
+  });
+
+  test("direct memory writes reject obvious secrets", async () => {
+    const cwd = await createTempWorkspace("agentmem-memory-secret");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    await expect(
+      createMemory({
+        cwd,
+        content: "api_key=sk-live-secret",
+        type: "decision",
+        source: "cli"
+      })
+    ).rejects.toThrow("Candidate rejected by hygiene check: possible secret detected.");
+  });
+
+  test("memory updates reject obvious secrets", async () => {
+    const cwd = await createTempWorkspace("agentmem-update-secret");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const memory = await createMemory({
+      cwd,
+      content: "Use pnpm for package operations.",
+      type: "workflow_rule",
+      source: "cli"
+    });
+
+    await expect(
+      updateMemory({
+        cwd,
+        memoryId: memory.id,
+        reason: "Do not store credentials.",
+        content: "token=secret-value"
+      })
+    ).rejects.toThrow("Candidate rejected by hygiene check: possible secret detected.");
   });
 });

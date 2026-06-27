@@ -11,6 +11,7 @@ import {
   parseMemoryType,
   parsePreflightDecision,
   parseSeverityLevel,
+  assertNoObviousSecret,
   validateRegexPattern
 } from "../domain/validators.js";
 
@@ -30,6 +31,7 @@ function validateCommandPolicyMetadata(metadata: Record<string, unknown>): void 
 }
 
 export async function createMemory(input: CreateMemoryInput): Promise<MemoryRecord> {
+  assertNoObviousSecret(input.content);
   const loaded = await loadProject(input.cwd);
 
   try {
@@ -56,9 +58,17 @@ export async function createMemory(input: CreateMemoryInput): Promise<MemoryReco
       createdAt: now,
       updatedAt: now,
       lastUsedAt: null,
+      pinned: input.pinned ?? false,
+      priority: input.priority ?? 0,
+      useCount: 0,
+      lastRetrievedAt: null,
+      lastInjectedAt: null,
       expiresAt: input.expiresAt ?? null,
       relatedMemoryIds: input.relatedMemoryIds ?? [],
       supersedesMemoryId: input.supersedesMemoryId ?? null,
+      conflictGroup: input.conflictGroup ?? null,
+      safetyFlags: input.safetyFlags ?? [],
+      redactionStatus: input.redactionStatus ?? "none",
       metadata
     };
 

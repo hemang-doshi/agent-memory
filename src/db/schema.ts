@@ -25,9 +25,17 @@ CREATE TABLE IF NOT EXISTS memories (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   last_used_at TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  priority INTEGER NOT NULL DEFAULT 0,
+  use_count INTEGER NOT NULL DEFAULT 0,
+  last_retrieved_at TEXT,
+  last_injected_at TEXT,
   expires_at TEXT,
   related_memory_ids_json TEXT NOT NULL,
   supersedes_memory_id TEXT,
+  conflict_group TEXT,
+  safety_flags_json TEXT NOT NULL DEFAULT '[]',
+  redaction_status TEXT NOT NULL DEFAULT 'none',
   metadata_json TEXT NOT NULL
 );
 
