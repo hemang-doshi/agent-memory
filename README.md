@@ -144,6 +144,18 @@ candidate learning.
 A report does not create memory, write receipts, or judge product usefulness
 automatically. It helps review real dogfood sessions.
 
+## Dogfooding v0.3
+
+Use the dogfood runbook for non-trivial implementation PRs:
+
+- `docs/dogfood/runbook.md`
+- `docs/dogfood/pr-checklist.md`
+- `docs/dogfood/subagent-program.md`
+- `docs/dogfood/v0.3-completion-plan.md`
+
+The v0.3 completion plan uses three real feature PRs reviewed by fresh-context
+sub-agents.
+
 ## Candidate Review
 
 Agents can propose memory candidates, but candidates are untrusted until
