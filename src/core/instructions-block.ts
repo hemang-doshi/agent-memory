@@ -4,26 +4,51 @@ export const AGENT_MEMORY_END_MARKER = "<!-- agent-memory:end -->";
 export const AGENT_MEMORY_ROUTER_BLOCK = `${AGENT_MEMORY_START_MARKER}
 ## Agent Memory Router
 
-This repo uses Agent Memory.
+This repo uses Agent Memory as a local-first behavior layer for coding agents.
 
-Use memory only at natural checkpoints:
+Default mode: always memory-aware, rarely noisy.
 
-1. Before planning a non-trivial change, run:
-   \`agentmem session start "<task>" --json\`
-   then:
-   \`agentmem pack "<task>" --session <session-id> --json\`
+For every task:
 
-2. Before risky commands, run:
+1. Start the protocol before planning or editing:
+
+   \`agentmem protocol start "<task>" --json\`
+
+   Use the returned memory pack before deciding what to do. Keep the returned \`sessionId\` for all later Agent Memory commands.
+
+2. Run preflight before risky commands:
    \`agentmem preflight --command "<command>" --session <session-id> --json\`
 
-3. After a failed approach, successful fix, user correction, or discovered reusable repo rule, propose a memory candidate:
+   Risky commands include install/build/render/migration/delete/network/destructive commands. Do not preflight harmless read-only commands unless they are risky in context.
+
+3. Record evidence only when something meaningful happens:
+   \`agentmem event record --session <session-id> --type <type> --summary "..." --json\`
+
+   Good evidence includes test results, command results, user corrections, and reusable observations. Do not record events for trivial observations.
+
+4. Propose memory candidates only for reusable learning:
    \`agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." --json\`
 
-4. At the end of the task, finish the session and include a compact memory receipt:
-   \`agentmem session finish --session <session-id> --summary "..." --json\`
-   \`agentmem session receipt --session <session-id> --json\`
+   Good candidates include failed approaches, successful fixes, agent mistakes, workflow rules, and command-policy candidates. Candidates are untrusted until reviewed.
 
-Do not store secrets, one-off task details, obvious repo facts, or low-confidence guesses as trusted memory.
+5. If unsure whether something should become memory, do not interrupt constantly. Collect uncertainty and surface it in a compact manage-memory review:
+   \`agentmem manage --plan\`
+
+   Do not run manage mode on every task unless there are memory decisions to review.
+
+6. Finish the session and check compliance before the final response:
+   \`agentmem session finish --session <session-id> --summary "..." --json\`
+   \`agentmem protocol check --session <session-id> --json\`
+
+For non-trivial work, include a compact protocol compliance summary in the final response.
+
+Safety rules:
+
+* Do not store secrets.
+* Do not propose memory for one-off task details.
+* Do not record events for trivial observations.
+* Do not ask the user after every possible memory.
+* Do not create trusted durable memory directly unless an explicit Agent Memory command supports it.
 ${AGENT_MEMORY_END_MARKER}`;
 
 export function hasRouterInstalled(content: string): boolean {
