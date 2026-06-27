@@ -198,4 +198,26 @@ describe("memory CRUD", () => {
       })
     ).rejects.toThrow("Candidate rejected by hygiene check: possible secret detected.");
   });
+
+  test("updateMemory rejects type change to command_policy without required metadata", async () => {
+    const cwd = await createTempWorkspace("agentmem-update-cmd-policy-invalid");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const memory = await createMemory({
+      cwd,
+      content: "Use pnpm for package operations.",
+      type: "workflow_rule",
+      source: "cli"
+    });
+
+    await expect(
+      updateMemory({
+        cwd,
+        memoryId: memory.id,
+        reason: "Make this a command policy.",
+        type: "command_policy"
+      })
+    ).rejects.toThrow("Missing required command policy metadata: commandPattern");
+  });
 });

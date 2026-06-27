@@ -166,7 +166,7 @@ describe("candidate review", () => {
     );
   });
 
-  test("command_policy candidates cannot be approved without command metadata", async () => {
+  test("command_policy candidates require command metadata for approval", async () => {
     const cwd = await createTempWorkspace("agentmem-candidate-approve-policy");
     workspaces.push(cwd);
     await initProject({ cwd });
@@ -180,10 +180,46 @@ describe("candidate review", () => {
     });
 
     await expect(approveCandidate({ cwd, candidateId: candidate.candidateId })).rejects.toThrow(
-      "Cannot approve command_policy candidates yet: commandPattern metadata is required."
+      "Missing required command policy metadata: commandPattern"
     );
 
     expect(await listMemories({ cwd, activeOnly: false })).toHaveLength(0);
+  });
+
+  test("command_policy candidate with valid metadata can be approved", async () => {
+    const cwd = await createTempWorkspace("agentmem-candidate-approve-policy-valid");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+    const session = await startSession({ cwd, task: "Approve command policy" });
+    const candidate = await proposeCandidate({
+      cwd,
+      sessionId: session.sessionId,
+      type: "command_policy",
+      content: "Do not run npm run render unless explicitly asked.",
+      evidence: "Render is expensive.",
+      metadata: {
+        commandPattern: "npm run render",
+        matchType: "exact",
+        decision: "warn",
+        suggestedAction: "Run pnpm test instead."
+      }
+    });
+
+    const approved = await approveCandidate({ cwd, candidateId: candidate.candidateId });
+    expect(approved.candidate.candidateStatus).toBe("approved");
+    expect(approved.memory.type).toBe("command_policy");
+    expect(approved.memory.metadata).toMatchObject({
+      commandPattern: "npm run render",
+      matchType: "exact",
+      decision: "warn",
+      suggestedAction: "Run pnpm test instead.",
+      candidateId: candidate.candidateId,
+      approvedFromCandidate: true
+    });
+
+    const memories = await listMemories({ cwd, activeOnly: false });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]?.type).toBe("command_policy");
   });
 
   test("reject proposed candidate records reason, receipt, and creates no memory", async () => {

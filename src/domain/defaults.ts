@@ -6,8 +6,7 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   default_scope: "project",
   preflight: {
     enabled: true,
-    default_decision: "warn",
-    block_requires_explicit_policy: true
+    default_decision: "warn"
   },
   retrieval: {
     include_unverified: false,

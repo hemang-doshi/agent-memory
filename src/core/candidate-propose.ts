@@ -11,7 +11,8 @@ export async function proposeCandidate({
   type,
   content,
   evidence,
-  evidenceEventId
+  evidenceEventId,
+  metadata
 }: {
   cwd: string;
   sessionId: string;
@@ -19,6 +20,7 @@ export async function proposeCandidate({
   content: string;
   evidence?: string;
   evidenceEventId?: string;
+  metadata?: Record<string, unknown>;
 }): Promise<MemoryCandidateRecord> {
   if (content.trim().length === 0) {
     throw new Error("candidate propose requires --content");
@@ -82,7 +84,8 @@ export async function proposeCandidate({
       createdAt: now,
       reviewedAt: null,
       reviewReason: null,
-      targetMemoryId: null
+      targetMemoryId: null,
+      metadata: metadata ?? {}
     };
 
     loaded.repo.insertMemoryCandidate(candidate);

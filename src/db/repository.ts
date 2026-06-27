@@ -437,8 +437,8 @@ export class AgentMemoryRepository {
         `INSERT INTO memory_candidates (
           candidate_id, project_id, session_id, type, content, scope, source,
           confidence, severity, evidence, evidence_event_ids_json, candidate_status,
-          proposed_by, created_at, reviewed_at, review_reason, target_memory_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          proposed_by, created_at, reviewed_at, review_reason, target_memory_id, metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         candidate.candidateId,
@@ -457,7 +457,8 @@ export class AgentMemoryRepository {
         candidate.createdAt,
         candidate.reviewedAt,
         candidate.reviewReason,
-        candidate.targetMemoryId
+        candidate.targetMemoryId,
+        stringifyJson(candidate.metadata ?? {})
       );
   }
 
@@ -488,7 +489,8 @@ export class AgentMemoryRepository {
           created_at = ?,
           reviewed_at = ?,
           review_reason = ?,
-          target_memory_id = ?
+          target_memory_id = ?,
+          metadata_json = ?
         WHERE candidate_id = ?`
       )
       .run(
@@ -508,6 +510,7 @@ export class AgentMemoryRepository {
         candidate.reviewedAt,
         candidate.reviewReason,
         candidate.targetMemoryId,
+        stringifyJson(candidate.metadata ?? {}),
         candidate.candidateId
       );
   }
@@ -668,7 +671,8 @@ export class AgentMemoryRepository {
       createdAt: String(row.created_at),
       reviewedAt: row.reviewed_at ? String(row.reviewed_at) : null,
       reviewReason: row.review_reason ? String(row.review_reason) : null,
-      targetMemoryId: row.target_memory_id ? String(row.target_memory_id) : null
+      targetMemoryId: row.target_memory_id ? String(row.target_memory_id) : null,
+      metadata: parseJson(row.metadata_json, {}, "memory_candidates.metadata_json")
     };
   }
 }

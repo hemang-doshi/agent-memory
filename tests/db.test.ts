@@ -29,7 +29,7 @@ describe("database hygiene", () => {
       .all() as { name: string }[];
     db.close();
 
-    expect(version?.value).toBe("2");
+    expect(version?.value).toBe("3");
     expect(indexes.map((index) => index.name)).toEqual(
       expect.arrayContaining([
         "idx_memories_project_created",
@@ -92,7 +92,7 @@ describe("database hygiene", () => {
     const memories = repo.listMemories("proj_old");
     migrated.close();
 
-    expect(version?.value).toBe("2");
+    expect(version?.value).toBe("3");
     expect(columns.map((column) => column.name)).toEqual(
       expect.arrayContaining([
         "pinned",

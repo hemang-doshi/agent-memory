@@ -102,7 +102,6 @@ export interface ProjectConfig {
   preflight: {
     enabled: boolean;
     default_decision: Exclude<PreflightDecision, "block">;
-    block_requires_explicit_policy: boolean;
   };
   retrieval: {
     include_unverified: boolean;
@@ -272,6 +271,7 @@ export interface MemoryCandidateRecord {
   reviewedAt: string | null;
   reviewReason: string | null;
   targetMemoryId: string | null;
+  metadata: JsonRecord;
 }
 
 export interface InitProjectResult {

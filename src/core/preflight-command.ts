@@ -129,8 +129,9 @@ export async function preflightCommand({
         commandMatches(command, memory.metadata)
     ).sort(comparePolicies);
 
-    let decision: PreflightDecision = "allow";
-    let reason = "No matching project memory.";
+    const configDefault = loaded.context.config.preflight.default_decision;
+    let decision: PreflightDecision = configDefault;
+    let reason = `No matching project memory. Default decision: ${decision}.`;
     let message = "No relevant risk found for this command.";
     let suggestedAction: string | undefined;
 

@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { SCHEMA_SQL } from "./schema.js";
 
-const SCHEMA_VERSION = "2";
+const SCHEMA_VERSION = "3";
 
 function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
@@ -25,6 +25,7 @@ function runMigrations(db: DatabaseSync): void {
   addColumnIfMissing(db, "memories", "safety_flags_json", "TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "memories", "redaction_status", "TEXT NOT NULL DEFAULT 'none'");
   addColumnIfMissing(db, "memory_candidates", "evidence_event_ids_json", "TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "memory_candidates", "metadata_json", "TEXT NOT NULL DEFAULT '{}'");
 }
 
 export function openDatabase(filename: string): DatabaseSync {
