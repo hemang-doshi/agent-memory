@@ -17,7 +17,7 @@ Use memory only at natural checkpoints:
    \`agentmem preflight --command "<command>" --session <session-id> --json\`
 
 3. After a failed approach, successful fix, user correction, or discovered reusable repo rule, propose a memory candidate:
-   \`agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." --json\`
+   \`agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." [--evidence-event <event-id>] --json\`
 
 4. At the end of the task, finish the session and include a compact memory receipt:
    \`agentmem session finish --session <session-id> --summary "..." --json\`

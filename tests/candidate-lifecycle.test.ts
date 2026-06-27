@@ -4,6 +4,7 @@ import { listCandidates } from "../src/core/candidate-list.js";
 import { proposeCandidate } from "../src/core/candidate-propose.js";
 import { initProject } from "../src/core/init-project.js";
 import { listMemories } from "../src/core/list-memories.js";
+import { recordEvent } from "../src/core/record-event.js";
 import { getSessionReceipt } from "../src/core/session-receipt.js";
 import { startSession } from "../src/core/session-start.js";
 import { cleanupWorkspace, createTempWorkspace } from "./helpers.js";
@@ -63,7 +64,7 @@ describe("candidate lifecycle", () => {
         content: "Content",
         evidence: ""
       })
-    ).rejects.toThrow("candidate propose requires --evidence");
+    ).rejects.toThrow("candidate propose requires --evidence or --evidence-event");
 
     await expect(
       proposeCandidate({
@@ -93,6 +94,76 @@ describe("candidate lifecycle", () => {
     const receipt = await getSessionReceipt({ cwd, sessionId: session.sessionId });
     expect(receipt.candidatesProposed).toBe(1);
     expect(receipt.receipts.some((item) => item.type === "candidate_proposed")).toBe(true);
+  });
+
+  test("candidate proposal can cite an evidence event", async () => {
+    const cwd = await createTempWorkspace("agentmem-candidate-event");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+    const session = await startSession({ cwd, task: "Event candidate" });
+    const event = await recordEvent({
+      cwd,
+      sessionId: session.sessionId,
+      type: "test_result",
+      summary: "pnpm test failed until the package manager command was corrected."
+    });
+
+    const candidate = await proposeCandidate({
+      cwd,
+      sessionId: session.sessionId,
+      type: "agent_mistake",
+      content: "Use pnpm instead of npm install in this repository.",
+      evidenceEventId: event.eventId
+    });
+
+    expect(candidate.evidence).toBe(`Evidence event: ${event.eventId}`);
+    expect(candidate.evidenceEventIds).toEqual([event.eventId]);
+
+    const [stored] = await listCandidates({ cwd });
+    expect(stored?.evidenceEventIds).toEqual([event.eventId]);
+
+    const receipt = await getSessionReceipt({ cwd, sessionId: session.sessionId });
+    const proposed = receipt.receipts.find((item) => item.type === "candidate_proposed");
+    expect(proposed?.payload).toMatchObject({
+      candidateId: candidate.candidateId,
+      evidenceEventIds: [event.eventId]
+    });
+  });
+
+  test("candidate proposal rejects unknown or cross-session evidence events", async () => {
+    const cwd = await createTempWorkspace("agentmem-candidate-event-errors");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+    const session = await startSession({ cwd, task: "Event candidate" });
+    const otherSession = await startSession({ cwd, task: "Other session" });
+    const event = await recordEvent({
+      cwd,
+      sessionId: otherSession.sessionId,
+      type: "test_result",
+      summary: "Other session evidence."
+    });
+
+    await expect(
+      proposeCandidate({
+        cwd,
+        sessionId: session.sessionId,
+        type: "agent_mistake",
+        content: "Use pnpm.",
+        evidenceEventId: "evt_missing"
+      })
+    ).rejects.toThrow("Unknown evidence event: evt_missing");
+
+    await expect(
+      proposeCandidate({
+        cwd,
+        sessionId: session.sessionId,
+        type: "agent_mistake",
+        content: "Use pnpm.",
+        evidenceEventId: event.eventId
+      })
+    ).rejects.toThrow(
+      `Evidence event ${event.eventId} does not belong to session ${session.sessionId}.`
+    );
   });
 
   test("candidate list returns newest first and can filter proposed", async () => {

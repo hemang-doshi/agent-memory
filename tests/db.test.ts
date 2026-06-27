@@ -120,6 +120,56 @@ describe("database hygiene", () => {
     });
   });
 
+  test("migrates existing candidate tables with evidence event IDs", async () => {
+    const cwd = await createTempWorkspace("agentmem-db-candidate-migrate");
+    workspaces.push(cwd);
+    const dbPath = `${cwd}/memory.db`;
+    const oldDb = new DatabaseSync(dbPath);
+    oldDb.exec(`
+      CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO schema_meta (key, value) VALUES ('schema_version', '1');
+      CREATE TABLE memory_candidates (
+        candidate_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        session_id TEXT,
+        type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        source TEXT NOT NULL,
+        confidence TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        evidence TEXT NOT NULL,
+        candidate_status TEXT NOT NULL,
+        proposed_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        reviewed_at TEXT,
+        review_reason TEXT,
+        target_memory_id TEXT
+      );
+      INSERT INTO memory_candidates (
+        candidate_id, project_id, session_id, type, content, scope, source,
+        confidence, severity, evidence, candidate_status, proposed_by,
+        created_at, reviewed_at, review_reason, target_memory_id
+      ) VALUES (
+        'cand_old', 'proj_old', NULL, 'workflow_rule', 'Use pnpm.',
+        'project', 'agent_reported', 'medium', 'medium', 'Observed in tests.',
+        'proposed', 'agent', '2026-01-01T00:00:00.000Z', NULL, NULL, NULL
+      );
+    `);
+    oldDb.close();
+
+    const migrated = openDatabase(dbPath);
+    const columns = migrated
+      .prepare("PRAGMA table_info(memory_candidates)")
+      .all() as { name: string }[];
+    const repo = new AgentMemoryRepository(migrated);
+    const candidate = repo.getMemoryCandidate("cand_old");
+    migrated.close();
+
+    expect(columns.map((column) => column.name)).toContain("evidence_event_ids_json");
+    expect(candidate?.evidenceEventIds).toEqual([]);
+  });
+
   test("corrupt JSON fields fail with a clear error", async () => {
     const cwd = await createTempWorkspace("agentmem-db-corrupt");
     workspaces.push(cwd);

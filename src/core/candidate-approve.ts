@@ -73,6 +73,7 @@ export async function approveCandidate({
       metadata: {
         candidateId: existing.candidateId,
         evidence: existing.evidence,
+        evidenceEventIds: existing.evidenceEventIds,
         approvedFromCandidate: true
       }
     };

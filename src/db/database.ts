@@ -24,6 +24,7 @@ function runMigrations(db: DatabaseSync): void {
   addColumnIfMissing(db, "memories", "conflict_group", "TEXT");
   addColumnIfMissing(db, "memories", "safety_flags_json", "TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "memories", "redaction_status", "TEXT NOT NULL DEFAULT 'none'");
+  addColumnIfMissing(db, "memory_candidates", "evidence_event_ids_json", "TEXT NOT NULL DEFAULT '[]'");
 }
 
 export function openDatabase(filename: string): DatabaseSync {

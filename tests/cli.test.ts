@@ -156,8 +156,27 @@ describe("CLI smoke tests", () => {
       ],
       cwd
     );
-    const eventJson = JSON.parse(event.stdout) as { eventType: string };
+    const eventJson = JSON.parse(event.stdout) as { eventId: string; eventType: string };
     expect(eventJson.eventType).toBe("command_result");
+
+    const candidate = await runCli(
+      [
+        "candidate",
+        "propose",
+        "--session",
+        sessionJson.sessionId,
+        "--type",
+        "workflow_rule",
+        "--content",
+        "Use pnpm for package operations.",
+        "--evidence-event",
+        eventJson.eventId,
+        "--json"
+      ],
+      cwd
+    );
+    const candidateJson = JSON.parse(candidate.stdout) as { evidenceEventIds: string[] };
+    expect(candidateJson.evidenceEventIds).toEqual([eventJson.eventId]);
 
     await expect(
       runCli(

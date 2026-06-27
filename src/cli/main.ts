@@ -77,6 +77,11 @@ function requireOption(parsed: ParsedArgs, name: string): string {
   return value;
 }
 
+function optionalOption(parsed: ParsedArgs, name: string): string | undefined {
+  const value = parsed.options[name];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
 function wantsJson(parsed: ParsedArgs): boolean {
   return Boolean(parsed.options.json) || parsed.options.format === "json";
 }
@@ -143,7 +148,7 @@ function helpText(): string {
     "  agentmem preflight --command <command> [--session <session-id>] [--json]",
     "  agentmem event record --type <type> --summary \"...\" [--session <session-id>] [--json]",
     "  agentmem eval [--json]",
-    "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" --evidence \"...\" [--json]",
+    "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" [--evidence \"...\"] [--evidence-event <event-id>] [--json]",
     "  agentmem candidate list [--status proposed] [--json]",
     "  agentmem candidate approve <candidate-id> [--json]",
     "  agentmem candidate reject <candidate-id> --reason \"...\" [--json]",
@@ -339,7 +344,8 @@ async function main(): Promise<void> {
           sessionId: requireOption(parsed, "session"),
           type: parseCandidateType(requireOption(parsed, "type")),
           content: requireOption(parsed, "content"),
-          evidence: requireOption(parsed, "evidence")
+          evidence: optionalOption(parsed, "evidence"),
+          evidenceEventId: optionalOption(parsed, "evidence-event")
         });
         render(asJson ? result : `Proposed ${result.candidateId}.`, asJson);
         return;

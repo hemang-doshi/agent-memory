@@ -35,6 +35,7 @@ Add or update tests for:
 - packet markdown and JSON shape
 - preflight decisions
 - candidate approval/rejection
+- candidate evidence-event provenance
 - protocol receipts
 
 Use isolated temporary workspaces for tests. Do not mutate the caller's real `.agent-memory` database from benchmarks or fixtures.
@@ -52,6 +53,8 @@ pnpm test
 pnpm build
 npm pack --dry-run --json
 ```
+
+The local `agentmem eval` harness verifies deterministic retrieval, packet generation, filtering, and context-delta behavior. It does not run live coding agents or prove improved model behavior.
 
 Release hardening should also smoke test the packed CLI from the npm tarball after package metadata and publish allowlists are finalized.
 

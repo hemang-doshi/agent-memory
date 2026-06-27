@@ -173,6 +173,68 @@ describe("retrieval and preflight", () => {
     expect(result.matchedMemoryIds).toEqual([]);
   });
 
+  test("ignores unsafe agent-invisible command policies during preflight", async () => {
+    const cwd = await createTempWorkspace("agentmem-preflight-unsafe");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const unsafePolicies = [
+      { content: "Redacted policy.", redactionStatus: "redacted" as const },
+      { content: "Blocked policy.", redactionStatus: "blocked" as const },
+      { content: "Secret policy.", safetyFlags: ["secret"] },
+      { content: "Superseded policy.", status: "superseded" as const },
+      { content: "Expired policy.", expiresAt: "2020-01-01T00:00:00.000Z" },
+      { content: "Do not include policy.", metadata: { doNotInclude: true } }
+    ];
+
+    for (const policy of unsafePolicies) {
+      await createMemory({
+        cwd,
+        content: policy.content,
+        type: "command_policy",
+        source: "user_explicit",
+        status: policy.status ?? "active",
+        redactionStatus: policy.redactionStatus ?? "none",
+        safetyFlags: policy.safetyFlags ?? [],
+        expiresAt: policy.expiresAt ?? null,
+        metadata: {
+          decision: "block",
+          commandPattern: "npm install",
+          matchType: "substring",
+          ...(policy.metadata ?? {})
+        }
+      });
+    }
+
+    const result = await preflightCommand({ cwd, command: "npm install zod" });
+    expect(result.decision).toBe("allow");
+    expect(result.matchedMemoryIds).toEqual([]);
+  });
+
+  test("preflight still matches safe active command policies", async () => {
+    const cwd = await createTempWorkspace("agentmem-preflight-safe-control");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    await createMemory({
+      cwd,
+      content: "Block npm install because this repo uses pnpm.",
+      type: "command_policy",
+      source: "user_explicit",
+      metadata: {
+        decision: "block",
+        commandPattern: "npm install",
+        matchType: "substring",
+        suggestedAction: "Use pnpm add instead."
+      }
+    });
+
+    const result = await preflightCommand({ cwd, command: "npm install zod" });
+    expect(result.decision).toBe("block");
+    expect(result.matchedMemoryIds).toHaveLength(1);
+    expect(result.suggestedAction).toBe("Use pnpm add instead.");
+  });
+
   test("invalid stored regex does not crash preflight", async () => {
     const cwd = await createTempWorkspace("agentmem-preflight-regex");
     workspaces.push(cwd);

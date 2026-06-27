@@ -10,8 +10,22 @@ Status: ready for release review after final verification is recorded in `V1_REL
 - Session and protocol receipts for auditable agent workflows.
 - Command preflight against explicit command policies.
 - Candidate proposal and review flow so agent-generated learning is not trusted automatically.
+- Candidate provenance can cite evidence text and/or linked evidence event receipts.
 - Non-destructive memory update, stale marking, and archive/forget commands.
 - Secret hygiene for trusted writes and candidate proposals.
+
+## What V1 Proves
+
+The built-in eval verifies local deterministic behavior:
+
+- relevant memory retrieval;
+- pinned and priority inclusion;
+- stale/superseded/conflict filtering;
+- redacted/secret exclusion;
+- markdown and JSON packet generation;
+- context delta versus no-memory baseline.
+
+It does not run live coding agents or prove improved model behavior.
 
 ## Primary Workflow
 
@@ -33,10 +47,11 @@ agentmem session receipt --session <session-id> --json
 - `pack` remains available as the compatibility name for packet generation.
 - `stale` remains available for marking stale memory.
 - `manage --plan` remains the non-interactive review planner.
+- Compatibility note: V1 currently publishes as `agent-memory-preflight`, while the CLI binary is `agentmem`.
 
 ## Not Included
 
-V1 does not ship hosted sync, a dashboard, an MCP server, default vector search, default LLM reranking, or hard command blocking.
+V1 does not ship hosted sync, a dashboard, an MCP server, default vector search, default LLM reranking, a hard command proxy, a live-agent benchmark, or guaranteed agent obedience.
 
 ## Release Blockers To Confirm
 

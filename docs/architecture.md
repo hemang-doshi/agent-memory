@@ -61,16 +61,17 @@ Retrieval is deterministic and local. It does not require embeddings or network 
 Current steps:
 
 1. Load project config and memories.
-2. Exclude archived, rejected, superseded, blocked/redacted, expired, and secret-flagged records.
-3. Respect config for stale and unverified records.
-4. Exclude memories superseded by another memory.
-5. Score by type priority, severity, confidence, priority, active status, and pinned status.
-6. Add relevance signals from task tokens, paths, tags, and command policy matching.
-7. Add recency and use-count boosts.
-8. Boost failed attempts, known fixes, agent mistakes, and rejected approaches when relevant.
-9. Resolve conflict groups by keeping the highest-scoring grouped memory.
-10. Attach retrieval metadata with score, signals, and reason.
-11. Record retrieval events and update retrieval timestamps/use count.
+2. Apply shared agent-visible eligibility.
+3. Exclude archived, rejected, superseded, blocked/redacted, expired, secret-flagged, and do-not-include records.
+4. Respect config for stale and unverified records.
+5. Exclude memories superseded by another memory.
+6. Score by type priority, severity, confidence, priority, active status, and pinned status.
+7. Add relevance signals from task tokens, paths, tags, and command policy matching.
+8. Add recency and use-count boosts.
+9. Boost failed attempts, known fixes, agent mistakes, and rejected approaches when relevant.
+10. Resolve conflict groups by keeping the highest-scoring grouped memory.
+11. Attach retrieval metadata with score, signals, and reason.
+12. Record retrieval events and update retrieval timestamps/use count.
 
 This is a basic hybrid scorer, not semantic contradiction detection. Conflict handling is metadata-driven through `conflictGroup` and supersession fields.
 
@@ -104,7 +105,7 @@ Memory has two write paths:
 - Trusted CLI writes such as `add`, `decision`, `failed`, and `policy`.
 - Untrusted candidate proposals through `candidate propose`.
 
-Candidates require evidence and remain untrusted until approved. Approval creates active memory. Rejection preserves the candidate for audit but prevents injection.
+Candidates require evidence and remain untrusted until approved. Evidence can be human-readable text, linked evidence event IDs, or both. Linked event IDs preserve provenance to recorded command results, test results, user corrections, or reusable observations from the session. Approval creates active memory. Rejection preserves the candidate for audit but prevents injection.
 
 This review model is deliberate: agents can observe and propose, but they should not silently create durable trusted memory from their own guesses.
 
@@ -112,6 +113,7 @@ This review model is deliberate: agents can observe and propose, but they should
 
 - Obvious secrets are rejected in trusted memory writes and candidate proposals.
 - Blocked/redacted memories are excluded from packets.
+- Preflight uses the same agent-visible eligibility gate as retrieval before matching command policies.
 - `.agent-memory/` should remain local and uncommitted.
 - `forget` archives memory instead of deleting it.
 - Hard command blocking is not a dependency of the current CLI; preflight returns decisions for agents to obey.

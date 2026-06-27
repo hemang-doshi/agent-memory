@@ -193,6 +193,7 @@ export interface MemoryCandidateRecord {
   confidence: ConfidenceLevel;
   severity: SeverityLevel;
   evidence: string;
+  evidenceEventIds: string[];
   candidateStatus: CandidateStatus;
   proposedBy: "agent" | "user" | "system";
   createdAt: string;

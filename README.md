@@ -50,6 +50,12 @@ agentmem add "Use pnpm for package operations." --type workflow_rule --tag packa
 agentmem inject "update package operations workflow" --format markdown
 ```
 
+## Package Name
+
+The published package is currently `agent-memory-preflight`; the installed CLI binary is `agentmem`.
+
+For a concrete demo, see [examples/avoid-repeated-mistake](https://github.com/hemang-doshi/agent-memory/tree/main/examples/avoid-repeated-mistake).
+
 ## Agent Workflow
 
 Use memory at natural checkpoints:
@@ -73,6 +79,8 @@ agentmem session receipt --session "$SESSION" --json
 
 Receipts are written by Agent Memory commands, not by agent self-report. They can show session start/finish, packet loading, preflight checks, warnings or blocks, candidate proposals, and candidate reviews.
 
+Use `--evidence-event <event-id>` on `candidate propose` when a candidate should link directly to an event receipt from the same session.
+
 ## Commands
 
 ```text
@@ -94,7 +102,7 @@ agentmem pack <task> [--session <session-id>] [--json]
 agentmem preflight --command <command> [--session <session-id>] [--json]
 agentmem event record --type <type> --summary "..." [--session <session-id>] [--json]
 agentmem eval [--json]
-agentmem candidate propose --session <session-id> --type <type> --content "..." --evidence "..." [--json]
+agentmem candidate propose --session <session-id> --type <type> --content "..." [--evidence "..."] [--evidence-event <event-id>] [--json]
 agentmem candidate list [--status proposed] [--json]
 agentmem candidate approve <candidate-id> [--json]
 agentmem candidate reject <candidate-id> --reason "..." [--json]
@@ -146,6 +154,8 @@ Retrieval is deterministic and local. It scores active eligible memories using:
 
 Archived, rejected, superseded, blocked/redacted, expired, and secret-flagged memories are excluded from normal packets. Stale and unverified memories are controlled by project config.
 
+The same agent-visible eligibility rules are used by command preflight, so blocked, redacted, expired, superseded, secret-flagged, and do-not-include command policies cannot affect preflight decisions.
+
 ## Safety Model
 
 Agent Memory is designed for local project state, not secret management.
@@ -155,6 +165,21 @@ Agent Memory is designed for local project state, not secret management.
 - Candidate memory is untrusted until approved.
 - Rejected candidates stay available for audit but are not injected.
 - `forget` archives memory instead of deleting it.
+
+Candidates can cite evidence text, linked evidence event receipts, or both. Linked events provide stronger provenance because they point back to a recorded command result, test result, user correction, or reusable observation from the session.
+
+## Limitations
+
+Agent Memory V1.0 is a local CLI core. It intentionally does not:
+
+- guarantee that a coding agent will obey injected memory;
+- proxy or hard-block shell commands by default;
+- prove that live agents produce better code;
+- automatically trust agent-generated memories;
+- replace human review of memory candidates;
+- provide hosted sync, an MCP server, dashboard, vector search, or LLM reranking.
+
+The local `eval` command verifies deterministic retrieval, packet generation, filtering, and context-delta behavior. It does not run live coding agents.
 
 ## Repository Layout
 

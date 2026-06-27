@@ -3,6 +3,7 @@ import type { MemoryRecord, RetrieveMemoriesInput } from "../domain/types.js";
 import { parseCommandPolicyMatchType } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
+import { isAgentVisibleMemory } from "./memory-eligibility.js";
 
 function tokenize(text: string): string[] {
   return Array.from(new Set(text
@@ -194,37 +195,6 @@ function describeReason(signals: ScoredMemory["signals"]): string {
   return reasons.join(", ") || "eligible memory";
 }
 
-function isEligible(memory: MemoryRecord, includeStale: boolean, includeUnverified: boolean, now: number): boolean {
-  if (memory.status === "archived" || memory.status === "rejected" || memory.status === "superseded") {
-    return false;
-  }
-
-  if (memory.status === "stale" && !includeStale) {
-    return false;
-  }
-
-  if (memory.status === "unverified" && !includeUnverified) {
-    return false;
-  }
-
-  if (memory.redactionStatus !== "none" || memory.safetyFlags.includes("secret")) {
-    return false;
-  }
-
-  if (memory.metadata.doNotInclude === true || memory.metadata.negative === true) {
-    return false;
-  }
-
-  if (memory.expiresAt) {
-    const expiresAt = Date.parse(memory.expiresAt);
-    if (!Number.isNaN(expiresAt) && expiresAt <= now) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 function excludeSuperseded(memories: MemoryRecord[]): MemoryRecord[] {
   const supersededIds = new Set(
     memories
@@ -313,12 +283,11 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
 
     const scored = memories
       .filter((memory) =>
-        isEligible(
+        isAgentVisibleMemory({
           memory,
-          loaded.context.config.retrieval.include_stale,
-          loaded.context.config.retrieval.include_unverified,
+          config: loaded.context.config,
           now
-        )
+        })
       )
       .map((memory) => scoreMemory(memory, queryTokens, files, input.command))
       .filter(hasRelevanceSignal)

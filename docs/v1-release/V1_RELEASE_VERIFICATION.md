@@ -15,15 +15,16 @@ Status: verified locally on 2026-06-27 from `/Users/hemangdoshi/Developer/agent-
 |---|---|
 | `pnpm install --frozen-lockfile` | Passed. Lockfile was up to date. |
 | `pnpm typecheck` | Passed: `tsc -p tsconfig.json --noEmit`. |
-| `pnpm test` | Passed: 16 test files, 78 tests. |
+| `pnpm test` | Passed: 16 test files, 84 tests. |
 | `pnpm build` | Passed: `tsc -p tsconfig.build.json`. |
 | `pnpm cli --help` | Passed. Help includes `add`, `retrieve`, `inject`, `event record`, `eval`, `update`, and `forget`. |
 | `pnpm cli eval --json` | Passed: 5 local deterministic eval checks. |
 | `node dist/cli/main.js --help` | Passed. |
 | `node dist/cli/main.js eval --json` | Passed. |
-| `npm pack --dry-run --json` | Passed: `agent-memory-preflight@1.0.0`, 44 files, required release docs and `dist/**` only. |
+| `npm pack --dry-run --json` | Passed: `agent-memory-preflight@1.0.0`, 45 files, required release docs and `dist/**` only. |
 | Packed CLI smoke | Passed. Installed packed tarball in a clean npm project, ran `npx agentmem --help`, and ran `npx agentmem eval --json` with 5 passing checks. |
 | README quickstart smoke | Passed from a clean temporary workspace using built `dist/cli/main.js`; `init`, `install-instructions`, `add`, `retrieve`, `inject`, and `preflight` completed, and retrieval matched 1 memory. |
+| Avoid repeated mistake smoke | Passed from a clean temporary workspace using built `dist/cli/main.js`; saved the pnpm rule, injected it before a dependency task, added an `npm install` command policy, and preflight returned `block` with `Use pnpm add instead.` |
 | Docs deferred-feature scan | Passed. Mentions of hosted sync, MCP, vector search, and cloud sync are labeled as not included or deferred. |
 | `git diff --check` | Passed. |
 
