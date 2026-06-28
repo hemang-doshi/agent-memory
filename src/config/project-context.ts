@@ -5,7 +5,7 @@ import { execFile as rawExecFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { DEFAULT_PROJECT_CONFIG } from "../domain/defaults.js";
-import type { InitProjectResult, ProjectConfig, ProjectRecord, RerankerMode } from "../domain/types.js";
+import type { InitProjectResult, ProjectConfig, ProjectRecord, RerankerMode, RetrievalMode } from "../domain/types.js";
 import { parseMemoryScope, parsePreflightDecision } from "../domain/validators.js";
 
 const execFile = promisify(rawExecFile);
@@ -31,6 +31,13 @@ function parseRerankerProvider(value: unknown): RerankerMode {
     return value;
   }
   throw new Error(`Invalid rerank.provider: ${String(value)}. Expected one of: none, noop, mock`);
+}
+
+function parseRetrievalMode(value: unknown): RetrievalMode {
+  if (value === "deterministic" || value === "keyword" || value === "hybrid" || value === "vector") {
+    return value;
+  }
+  throw new Error(`Invalid retrieval.default_mode: ${String(value)}. Expected one of: deterministic, keyword, hybrid, vector`);
 }
 
 export interface ProjectContext {
@@ -137,15 +144,16 @@ export async function resolveRemoteHash(gitRoot: string): Promise<string | null>
 export async function buildProjectRecord(context: ProjectContext): Promise<ProjectRecord> {
   const gitRemoteHash = await resolveRemoteHash(context.gitRoot);
   const now = new Date().toISOString();
-  const projectId = `proj_${createHash("sha1")
-    .update(`${context.gitRoot}:${gitRemoteHash ?? "local"}`)
-    .digest("hex")
-    .slice(0, 8)}`;
-  const name = context.config.project_name || basename(context.gitRoot) || randomUUID();
+  const projectId = context.config.project_id ?? `proj_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+
+  if (!context.config.project_id) {
+    context.config.project_id = projectId;
+    writeFileSync(context.configPath, JSON.stringify(context.config, null, 2));
+  }
 
   return {
     projectId,
-    name,
+    name: context.config.project_name || basename(context.gitRoot) || "agent-memory-preflight",
     gitRoot: context.gitRoot,
     gitRemoteHash,
     createdAt: now,
@@ -158,6 +166,7 @@ export function ensureConfig(configPath: string, gitRoot: string): ProjectConfig
   if (!existsSync(configPath)) {
     const config = {
       ...DEFAULT_PROJECT_CONFIG,
+      project_id: `proj_${randomUUID().replaceAll("-", "").slice(0, 12)}`,
       project_name: basename(gitRoot) || DEFAULT_PROJECT_CONFIG.project_name
     } satisfies ProjectConfig;
     writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -208,11 +217,23 @@ export function loadConfig(configPath: string): ProjectConfig {
           ? DEFAULT_PROJECT_CONFIG.preflight.default_decision
           : parseDefaultPreflightDecision(
               (rawPreflight as Partial<ProjectConfig["preflight"]>).default_decision
-            )
+            ),
+      enforce_warn_exit_code:
+        (rawPreflight as Partial<ProjectConfig["preflight"]>).enforce_warn_exit_code === undefined
+          ? DEFAULT_PROJECT_CONFIG.preflight.enforce_warn_exit_code
+          : Number((rawPreflight as Partial<ProjectConfig["preflight"]>).enforce_warn_exit_code),
+      enforce_block_exit_code:
+        (rawPreflight as Partial<ProjectConfig["preflight"]>).enforce_block_exit_code === undefined
+          ? DEFAULT_PROJECT_CONFIG.preflight.enforce_block_exit_code
+          : Number((rawPreflight as Partial<ProjectConfig["preflight"]>).enforce_block_exit_code)
     },
     retrieval: {
       ...DEFAULT_PROJECT_CONFIG.retrieval,
-      ...rawRetrieval
+      ...rawRetrieval,
+      default_mode:
+        (rawRetrieval as Partial<ProjectConfig["retrieval"]>).default_mode === undefined
+          ? DEFAULT_PROJECT_CONFIG.retrieval.default_mode
+          : parseRetrievalMode((rawRetrieval as Partial<ProjectConfig["retrieval"]>).default_mode)
     },
     vector: {
       enabled:

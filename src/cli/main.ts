@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import process from "node:process";
+import { spawnSync } from "node:child_process";
 
 import { listAdapters, installAdapter, uninstallAdapter } from "../adapters/registry.js";
 import { createMemory } from "../core/create-memory.js";
@@ -255,11 +256,12 @@ function helpText(): string {
     "  agentmem failed <content>",
     "  agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block] [--suggest <action>]",
     "  agentmem index [--rebuild|--vector] [--json]",
-    "  agentmem retrieve <task> [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--explain] [--file <path>] [--command <command>] [--limit n] [--json]",
+    "  agentmem retrieve <task> [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--explain] [--dry-run] [--file <path>] [--command <command>] [--limit n] [--json]",
     "  agentmem explain-retrieval <task> [--mode deterministic|keyword|hybrid|vector] [--rerank] [--json]",
     "  agentmem inject <task> [--session <session-id>] [--file <path>] [--command <command>] [--json|--format markdown]",
     "  agentmem pack <task> [--session <session-id>] [--file <path>] [--command <command>] [--json]",
-    "  agentmem preflight --command <command> [--session <session-id>] [--json]",
+    "  agentmem preflight --command <command> [--session <session-id>] [--enforce] [--json]",
+    "  agentmem run --session <session-id> [--allow-warn] -- <command>",
     "  agentmem eval [--json]",
     "  agentmem eval live [--write-report] [--json]",
     "  agentmem mcp serve [--json]",
@@ -785,7 +787,8 @@ async function main(): Promise<void> {
         mode: parseRetrievalMode(parsed.options.mode),
         explain: Boolean(parsed.options.explain),
         rerank: Boolean(parsed.options.rerank),
-        reranker: parseRerankerMode(parsed.options.reranker)
+        reranker: parseRerankerMode(parsed.options.reranker),
+        dryRun: Boolean(parsed.options["dry-run"])
       });
       const jsonResult = {
         memories,
@@ -813,7 +816,8 @@ async function main(): Promise<void> {
         mode: parseRetrievalMode(parsed.options.mode),
         explain: true,
         rerank: Boolean(parsed.options.rerank),
-        reranker: parseRerankerMode(parsed.options.reranker)
+        reranker: parseRerankerMode(parsed.options.reranker),
+        dryRun: true
       });
       const explanations = explainRetrievedMemories(memories);
       render(
@@ -848,7 +852,79 @@ async function main(): Promise<void> {
         command: commandValue,
         sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
       });
+      const enforce = Boolean(parsed.options.enforce);
+
       render(asJson ? result : formatTextPreflight(result), asJson);
+
+      if (enforce) {
+        if (result.decision === "block") {
+          process.exitCode = 2;
+        } else if (result.decision === "warn") {
+          process.exitCode = 1;
+        }
+      }
+
+      return;
+    }
+    case "run": {
+      const doubleDashIndex = process.argv.indexOf("--");
+      if (doubleDashIndex === -1) {
+        throw new Error("agentmem run requires -- <command>. Example: agentmem run -- pnpm test");
+      }
+
+      const runArgs = process.argv.slice(doubleDashIndex + 1);
+      if (runArgs.length === 0) {
+        throw new Error("agentmem run requires a command after --.");
+      }
+
+      const [runCommand, ...runCommandArgs] = runArgs;
+      if (!runCommand) {
+        throw new Error("agentmem run requires a command after --.");
+      }
+
+      const preflight = await preflightCommand({
+        cwd,
+        command: runArgs.join(" "),
+        sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
+      });
+
+      if (preflight.decision === "block") {
+        process.stderr.write(`BLOCKED: ${preflight.message}\n`);
+        process.exitCode = 2;
+        return;
+      }
+
+      if (preflight.decision === "warn" && !parsed.options["allow-warn"]) {
+        process.stderr.write(`WARNING: ${preflight.message}\n`);
+        process.stderr.write("Use --allow-warn to proceed anyway.\n");
+        process.exitCode = 1;
+        return;
+      }
+
+      const result = spawnSync(runCommand, runCommandArgs, {
+        cwd,
+        stdio: "inherit"
+      });
+
+      if (result.error) {
+        throw new Error(`Failed to execute ${runCommand}: ${result.error.message}`);
+      }
+
+      if (parsed.options.session) {
+        try {
+          await recordEvidenceEvent({
+            cwd,
+            sessionId: String(parsed.options.session),
+            type: "command_result",
+            summary: `${runCommand} ${runCommandArgs.join(" ")} (exit ${result.status})`,
+            command: runArgs.join(" "),
+            exitCode: result.status ?? 0
+          });
+        } catch {
+        }
+      }
+
+      process.exitCode = result.status ?? 0;
       return;
     }
     case "list": {

@@ -100,17 +100,21 @@ export type TrustLevel = "trusted" | "reviewed" | "low" | "untrusted";
 export type JsonRecord = Record<string, unknown>;
 
 export interface ProjectConfig {
+  project_id?: string;
   project_name: string;
   memory_pack_token_budget: number;
   default_scope: MemoryScope;
   preflight: {
     enabled: boolean;
     default_decision: Exclude<PreflightDecision, "block">;
+    enforce_warn_exit_code: number;
+    enforce_block_exit_code: number;
   };
   retrieval: {
     include_unverified: boolean;
     include_stale: boolean;
     max_results: number;
+    default_mode: RetrievalMode;
   };
   vector: {
     enabled: boolean;
@@ -344,6 +348,7 @@ export interface RetrieveMemoriesInput {
   explain?: boolean;
   rerank?: boolean;
   reranker?: RerankerMode;
+  dryRun?: boolean;
 }
 
 export interface PreflightResult {

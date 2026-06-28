@@ -1,7 +1,7 @@
 import { CONFIDENCE_SCORES, SEVERITY_SCORES, TYPE_PRIORITIES } from "../domain/defaults.js";
 import type { MemoryRecord, RetrievalMode } from "../domain/types.js";
 import { parseCommandPolicyMatchType } from "../domain/validators.js";
-import { excludeRelationSupersededMemories, isAgentVisibleMemory } from "../core/memory-eligibility.js";
+import { selectAgentVisibleMemories } from "../core/memory-visibility.js";
 import { buildPackSections, formatPackMarkdown } from "../formatters/pack-markdown.js";
 import { searchVectorIndexReadOnly } from "../vector/vector-index.js";
 
@@ -326,9 +326,11 @@ export function retrieveReadOnly(
   const mode = input.mode ?? "deterministic";
   const maxResults = Math.max(1, Math.floor(input.maxResults ?? loaded.config.retrieval.max_results));
   const query = `${input.task} ${input.command ?? ""}`;
-  const visibleMemories = excludeRelationSupersededMemories(
-    loaded.repo.listMemories(loaded.project.projectId)
-  ).filter((memory) => isAgentVisibleMemory({ memory, config: loaded.config, now: Date.now() }));
+  const visibleMemories = selectAgentVisibleMemories({
+    memories: loaded.repo.listMemories(loaded.project.projectId),
+    config: loaded.config,
+    now: Date.now()
+  });
   const deterministicScored = visibleMemories
     .map((memory) => scoreMemory(memory, tokenize(query), input.files ?? [], input.command))
     .filter(hasRelevanceSignal)

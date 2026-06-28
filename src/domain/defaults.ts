@@ -6,12 +6,15 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   default_scope: "project",
   preflight: {
     enabled: true,
-    default_decision: "warn"
+    default_decision: "warn",
+    enforce_warn_exit_code: 1,
+    enforce_block_exit_code: 2
   },
   retrieval: {
     include_unverified: false,
     include_stale: false,
-    max_results: 8
+    max_results: 8,
+    default_mode: "deterministic"
   },
   vector: {
     enabled: false,

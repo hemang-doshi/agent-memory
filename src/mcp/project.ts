@@ -6,6 +6,7 @@ import { loadConfig, NOT_INITIALIZED_MESSAGE } from "../config/project-context.j
 import { summarizeSessionReceipts } from "../core/session-receipt.js";
 import { AgentMemoryRepository } from "../db/repository.js";
 import type { JsonRecord, MemoryRecord, ProjectRecord } from "../domain/types.js";
+import { selectAgentVisibleMemories } from "../core/memory-visibility.js";
 
 import { optionalBoolean, requireString } from "./params.js";
 import {
@@ -117,7 +118,13 @@ export function listMemoriesReadOnly(
     throw new McpRequestError("invalid_request", "MCP parameter must be a string: type.");
   }
 
-  return loaded.repo.listMemories(loaded.project.projectId).filter((memory) => {
+  const memories = loaded.repo.listMemories(loaded.project.projectId);
+  const visibleDefaults = selectAgentVisibleMemories({
+    memories,
+    config: loaded.config
+  });
+
+  return visibleDefaults.filter((memory) => {
     if (type && memory.type !== type) {
       return false;
     }

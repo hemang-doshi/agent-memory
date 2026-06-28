@@ -5,7 +5,7 @@ import { searchVectorIndex } from "../vector/vector-index.js";
 import { parseCommandPolicyMatchType } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
-import { excludeRelationSupersededMemories, isAgentVisibleMemory } from "./memory-eligibility.js";
+import { selectAgentVisibleMemories } from "./memory-visibility.js";
 
 function tokenize(text: string): string[] {
   return Array.from(new Set(text
@@ -437,17 +437,13 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
     const files = input.files ?? [];
     const queryTokens = tokenize(`${input.task} ${input.command ?? ""}`);
     const now = Date.now();
-    const memories = excludeRelationSupersededMemories(
-      loaded.repo.listMemories(loaded.project.projectId)
-    );
+    const memories = loaded.repo.listMemories(loaded.project.projectId);
 
-    const visibleMemories = memories.filter((memory) =>
-      isAgentVisibleMemory({
-        memory,
-        config: loaded.context.config,
-        now
-      })
-    );
+    const visibleMemories = selectAgentVisibleMemories({
+      memories,
+      config: loaded.context.config,
+      now
+    });
     const deterministicScored = visibleMemories
       .map((memory) => scoreMemory(memory, queryTokens, files, input.command))
       .filter(hasRelevanceSignal)
@@ -500,26 +496,28 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
     }
     const matchedMemoryIds = results.map((memory) => memory.id);
 
-    loaded.repo.markMemoriesRetrieved(matchedMemoryIds);
+    if (!input.dryRun) {
+      loaded.repo.markMemoriesRetrieved(matchedMemoryIds);
 
-    loaded.repo.insertEvent({
-      projectId: loaded.project.projectId,
-      eventType: "memory_retrieved",
-      actor: "system",
-      payload: {
-        task: input.task,
-        command: input.command ?? null,
-        mode,
-        matchedMemoryIds,
-        rerank: rerankReceipt,
-        scoring: resolved.map((entry) => ({
-          memoryId: entry.memory.id,
-          score: entry.score,
-          reason: entry.reason,
-          signals: entry.signals
-        }))
-      }
-    });
+      loaded.repo.insertEvent({
+        projectId: loaded.project.projectId,
+        eventType: "memory_retrieved",
+        actor: "system",
+        payload: {
+          task: input.task,
+          command: input.command ?? null,
+          mode,
+          matchedMemoryIds,
+          rerank: rerankReceipt,
+          scoring: resolved.map((entry) => ({
+            memoryId: entry.memory.id,
+            score: entry.score,
+            reason: entry.reason,
+            signals: entry.signals
+          }))
+        }
+      });
+    }
 
     return results;
   } finally {

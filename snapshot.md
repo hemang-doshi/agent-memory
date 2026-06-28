@@ -2,75 +2,68 @@
 
 ## Product Snapshot
 
-This repository contains a CLI-first MVP for a local-first agent memory layer. The tool stores project-scoped memory records in a SQLite database under `.agent-memory/`, retrieves the most relevant records for a task, and warns before commands that match known project policies.
+Agent Memory V2 is a production-grade local-first project memory system for coding agents. It stores typed, scoped memories in SQLite, retrieves relevant context through four retrieval modes, prevents risky commands through deterministic preflight, exposes a read-only-by-default MCP surface, and produces auditable protocol receipts — all local, no hosted services required.
 
 ## Code Structure
 
 ### `src/cli`
 
-`main.ts` is the executable entrypoint. It parses positional arguments and `--flags`, maps them to core services, and renders either human-readable text or JSON.
+`main.ts` is the executable entrypoint. Parses positional arguments and `--flags`, maps them to core services, renders text or JSON. Supports `agentmem run -- <cmd>` for preflight-enforced command execution.
 
 ### `src/core`
 
-This layer owns the product behavior:
+Domain use cases: memory CRUD, retrieval orchestration, packet generation, protocol start/check, sessions, candidates, scan, preflight, doctor.
 
-- `init-project.ts`: explicitly bootstraps config and the SQLite store, with opt-in Git initialization
-- `create-memory.ts`: records typed memories
-- `list-memories.ts`: lists filtered project memories
-- `search-memories.ts`: keyword search with deterministic ranking
-- `mark-memory-stale.ts`: lifecycle updates for stale records
-- `explain-memory.ts`: returns a memory plus related event history
-- `retrieve-memories.ts`: shared retrieval scorer for packs and preflight
-- `generate-pack.ts`: builds compact markdown memory packs
-- `preflight-command.ts`: evaluates a command against active project policies
-- `context.ts`: shared loader for project context, repository access, and DB lifecycle
+- `memory-visibility.ts`: Centralized visibility gate (`isAgentVisibleMemory`, `selectAgentVisibleMemories`). Used by every agent-facing surface.
+- `retrieve-memories.ts`: Retrieval engine with four modes (deterministic, keyword, hybrid, vector) and optional reranking. Supports dry-run/non-mutating retrieval.
+- `preflight-command.ts`: Command policy matching against visible memories.
+- `context.ts`: Project loading with stable config-backed `project_id` — repo moves/clones/renames preserve memory continuity.
+
+### `src/vector`, `src/ranking`, `src/safety`, `src/lifecycle`, `src/ingestion`, `src/ops`, `src/mcp`, `src/adapters`, `src/evals`
+
+V2 focused modules: local vector index, optional reranker, audit/quarantine, lifecycle (dedupe/merge/supersede/review/quality/purge), file/log ingestion and import/export, backup/restore/repair/migrations, MCP server, agent adapters, and proof harness.
 
 ### `src/db`
 
-- `schema.ts` defines the SQLite tables: `projects`, `memories`, `events`, `memory_links`, `schema_meta`, and baseline indexes
-- `database.ts` opens the local SQLite database, applies schema creation, and records schema version metadata
-- `repository.ts` maps between SQLite rows and typed domain records, wraps critical memory/event writes in transactions, and manages event persistence
+SQLite schema (v4+), open-time column migrations, FTS5 keyword index, and typed repository access with transaction support.
 
 ### `src/domain`
 
-This layer defines the stable shapes and defaults:
-
-- memory enums and record interfaces
-- retrieval and severity/confidence scoring defaults
-- input guard helpers and runtime validators
+Public record shapes, enums, defaults, guards, and validators.
 
 ### `src/formatters`
 
-- `pack-markdown.ts` groups retrieved memories into human-readable sections
-- `output.ts` renders plain-text list and preflight summaries for the CLI
+Pack markdown, text output, and protocol formatters.
 
 ### `tests`
 
-The test suite verifies:
-
-- project initialization and idempotency
-- explicit initialization semantics and local Git exclude protection
-- typed memory creation, search, staleness, and explainability
-- memory pack generation and command preflight behavior
-- CLI smoke execution
-- replayable benchmark fixtures
+32 test files, 184 tests covering unit, integration, CLI, security, retrieval, MCP, adapter, ingestion, migration, project identity, and golden/benchmark fixtures.
 
 ## Data Flow
 
-1. The CLI runs inside a project directory.
-2. `agentmem init` creates `.agent-memory/`, config, database state, and the project record.
-3. Other commands use `loadProject()` to load existing state and fail with a clear initialization error if missing.
-4. Core services read or write typed records through `AgentMemoryRepository`.
-5. Every memory mutation and retrieval/preflight action writes an event for provenance.
-6. Packs use deterministic relevance signals before ranking boosts, and preflight ranks matching policies by strongest decision and specificity.
+1. CLI runs inside a project directory.
+2. `agentmem init` creates `.agent-memory/`, config (with stable `project_id`), DB state.
+3. Commands use `loadProject()` → repo access → typed records through `AgentMemoryRepository`.
+4. Every memory mutation and retrieval/preflight action writes events for provenance.
+5. `selectAgentVisibleMemories()` gates every agent-facing surface with deterministic safety rules.
+6. Packs select memories by salience, group into sections, and truncate by configured budget.
 
-## Current MVP Gaps
+## Current Limitations (honest)
 
-- MCP transport is deferred
-- no interactive memory edit command yet
-- no automatic repo-state conflict detector
-- only command preflight is implemented; file-edit preflight is still future work
+- Local-hash vector is lexical embedding, not true semantic search.
+- External embedding/LLM providers require explicit adapter configuration (not connected by default).
+- `eval live` is a deterministic local harness over scripted scenarios — does not invoke external agents or claim universal agent behavior.
+- MCP is stdio-only; no HTTP/SSE transport.
+- No pagination on `listMemories()` — loads all records.
+- Candidate approval does not yet require a reason document.
 
-## Verification Snapshot
+## Verification
 
-The repository is validated by `pnpm test`, `pnpm typecheck`, and `pnpm build`.
+```bash
+pnpm typecheck   # Zero errors
+pnpm test        # 32 files, 184 tests
+pnpm build       # Clean dist/
+pnpm cli eval --json   # 5/5 V1 checks
+pnpm cli eval live --json  # 8/8 scenarios
+pnpm cli benchmark run --all --json  # 4/4 fixtures
+```
