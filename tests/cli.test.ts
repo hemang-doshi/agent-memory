@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { execFile } from "node:child_process";
+import { writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -216,6 +217,231 @@ describe("CLI smoke tests", () => {
     expect(evalJson.checks.length).toBeGreaterThan(0);
   });
 
+  test("supports keyword index and retrieval explanation commands", async () => {
+    const cwd = await createTempWorkspace("agentmem-cli-retrieval-v2");
+    workspaces.push(cwd);
+
+    await runCli(["init"], cwd);
+    const created = await runCli(
+      [
+        "add",
+        "Billing reconciler retry policy.",
+        "--type",
+        "architecture_note",
+        "--tags",
+        "billing",
+        "--json"
+      ],
+      cwd
+    );
+    const createdJson = JSON.parse(created.stdout) as { id: string };
+
+    const index = await runCli(["index", "--json"], cwd);
+    const indexJson = JSON.parse(index.stdout) as {
+      indexedMemories: number;
+      eligibleMemories: number;
+      stale: boolean;
+    };
+    expect(indexJson).toEqual({
+      indexedMemories: 1,
+      eligibleMemories: 1,
+      stale: false
+    });
+
+    const rebuilt = await runCli(["index", "--rebuild", "--json"], cwd);
+    expect(JSON.parse(rebuilt.stdout)).toMatchObject({ indexedMemories: 1, stale: false });
+
+    const keyword = await runCli(
+      ["retrieve", "reconciler", "--mode", "keyword", "--json"],
+      cwd
+    );
+    const keywordJson = JSON.parse(keyword.stdout) as { matchedMemoryIds: string[] };
+    expect(keywordJson.matchedMemoryIds).toEqual([createdJson.id]);
+
+    const explained = await runCli(
+      ["retrieve", "reconciler", "--mode", "keyword", "--explain", "--json"],
+      cwd
+    );
+    const explainedJson = JSON.parse(explained.stdout) as {
+      explanations: Array<{ memoryId: string; mode: string; reason: string }>;
+    };
+    expect(explainedJson.explanations).toEqual([
+      expect.objectContaining({
+        memoryId: createdJson.id,
+        mode: "keyword",
+        reason: expect.stringContaining("keyword match")
+      })
+    ]);
+
+    const explainCommand = await runCli(
+      ["explain-retrieval", "reconciler", "--mode", "keyword", "--json"],
+      cwd
+    );
+    const explainCommandJson = JSON.parse(explainCommand.stdout) as {
+      matchedMemoryIds: string[];
+      explanations: Array<{ mode: string }>;
+    };
+    expect(explainCommandJson.matchedMemoryIds).toEqual([createdJson.id]);
+    expect(explainCommandJson.explanations[0]?.mode).toBe("keyword");
+
+    const doctor = await runCli(["doctor", "--index", "--json"], cwd);
+    const doctorJson = JSON.parse(doctor.stdout) as {
+      index: { keyword: { indexedMemories: number; stale: boolean } };
+    };
+    expect(doctorJson.index.keyword).toMatchObject({ indexedMemories: 1, stale: false });
+
+    const deepDoctor = await runCli(["doctor", "--deep", "--json"], cwd);
+    const deepDoctorJson = JSON.parse(deepDoctor.stdout) as {
+      index: { keyword: { indexedMemories: number; stale: boolean } };
+    };
+    expect(deepDoctorJson.index.keyword).toMatchObject({ indexedMemories: 1, stale: false });
+  });
+
+  test("supports V2 production command surfaces", async () => {
+    const cwd = await createTempWorkspace("agentmem-cli-v2");
+    workspaces.push(cwd);
+
+    await runCli(["init"], cwd);
+    const first = await runCli([
+      "add",
+      "Use pnpm for package operations.",
+      "--type",
+      "workflow_rule",
+      "--json"
+    ], cwd);
+    const firstJson = JSON.parse(first.stdout) as { id: string };
+    const duplicate = await runCli([
+      "add",
+      "Use pnpm for package operations.",
+      "--type",
+      "workflow_rule",
+      "--json"
+    ], cwd);
+    const duplicateJson = JSON.parse(duplicate.stdout) as { id: string };
+
+    const vectorIndex = await runCli(["index", "--vector", "--json"], cwd);
+    expect(JSON.parse(vectorIndex.stdout)).toMatchObject({
+      indexedMemories: 2,
+      provider: "local-hash",
+      stale: false
+    });
+
+    const vectorRetrieve = await runCli([
+      "retrieve",
+      "package operations",
+      "--mode",
+      "vector",
+      "--rerank",
+      "--reranker",
+      "mock",
+      "--json"
+    ], cwd);
+    const vectorRetrieveJson = JSON.parse(vectorRetrieve.stdout) as {
+      memories: Array<{ metadata: { rerank?: { provider: string } } }>;
+    };
+    expect(vectorRetrieveJson.memories[0]?.metadata.rerank).toMatchObject({ provider: "mock" });
+
+    const dedupe = await runCli(["dedupe", "--json"], cwd);
+    const dedupeJson = JSON.parse(dedupe.stdout) as { duplicateGroups: Array<{ memoryIds: string[] }> };
+    expect(dedupeJson.duplicateGroups[0]?.memoryIds).toEqual([duplicateJson.id, firstJson.id].sort());
+
+    await runCli([
+      "merge",
+      "--target",
+      firstJson.id,
+      "--source",
+      duplicateJson.id,
+      "--reason",
+      "Duplicate CLI smoke memory.",
+      "--json"
+    ], cwd);
+
+    const quality = await runCli(["quality", "--json"], cwd);
+    expect(JSON.parse(quality.stdout)).toMatchObject({
+      summary: expect.objectContaining({ duplicateGroups: 0 })
+    });
+
+    const review = await runCli(["review", "--json"], cwd);
+    expect(JSON.parse(review.stdout)).toMatchObject({ needsReview: [] });
+
+    await writeFile(resolve(cwd, "NOTES.md"), "Avoid direct edits to generated files.");
+    const ingest = await runCli(["ingest", "NOTES.md", "--as", "candidates", "--json"], cwd);
+    expect(JSON.parse(ingest.stdout)).toMatchObject({
+      chunks: 1,
+      candidateIds: expect.any(Array)
+    });
+
+    const exported = await runCli(["export", "--output", "agentmem-export.json", "--json"], cwd);
+    expect(JSON.parse(exported.stdout)).toMatchObject({
+      format: "agent-memory-v2-json",
+      memories: expect.any(Array),
+      candidates: expect.any(Array)
+    });
+    const importCwd = await createTempWorkspace("agentmem-cli-v2-import");
+    workspaces.push(importCwd);
+    await runCli(["init"], importCwd);
+    await writeFile(resolve(importCwd, "agentmem-export.json"), exported.stdout);
+    const imported = await runCli(["import", "agentmem-export.json", "--json"], importCwd);
+    expect(JSON.parse(imported.stdout)).toMatchObject({
+      importedMemories: expect.any(Number),
+      importedCandidates: expect.any(Number)
+    });
+
+    const audit = await runCli(["audit", "--json"], cwd);
+    expect(JSON.parse(audit.stdout)).toMatchObject({
+      summary: expect.objectContaining({ findings: 0 })
+    });
+
+    const quarantine = await runCli([
+      "quarantine",
+      firstJson.id,
+      "--reason",
+      "CLI smoke quarantine.",
+      "--json"
+    ], cwd);
+    expect(JSON.parse(quarantine.stdout)).toMatchObject({
+      id: firstJson.id,
+      status: "quarantined"
+    });
+
+    const mcp = await runCli(["mcp", "serve", "--json"], cwd);
+    expect(JSON.parse(mcp.stdout)).toMatchObject({
+      manifest: expect.objectContaining({
+        server: expect.objectContaining({ readOnlyDefault: true, shellCommands: false }),
+        permissions: expect.objectContaining({
+          writeToolsEnabled: false,
+          candidateApprovalEnabled: false
+        })
+      })
+    });
+
+    const adapters = await runCli(["adapters", "list", "--json"], cwd);
+    expect(JSON.parse(adapters.stdout)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "codex" })])
+    );
+
+    const migration = await runCli(["migrate", "status", "--json"], cwd);
+    expect(JSON.parse(migration.stdout)).toMatchObject({
+      currentVersion: "4",
+      latestVersion: "4",
+      pending: []
+    });
+
+    const backup = await runCli(["backup", "--json"], cwd);
+    expect(JSON.parse(backup.stdout)).toMatchObject({
+      files: expect.arrayContaining(["memory.db"])
+    });
+
+    const repair = await runCli(["repair", "--json"], cwd);
+    expect(JSON.parse(repair.stdout)).toMatchObject({ repaired: true });
+
+    const liveEval = await runCli(["eval", "live", "--json"], cwd);
+    expect(JSON.parse(liveEval.stdout)).toMatchObject({
+      name: "agent-memory-live-local-harness",
+      passed: true
+    });
+  });
+
   test("fails clearly for invalid CLI enum inputs and regex policies", async () => {
     const cwd = await createTempWorkspace("agentmem-cli-invalid");
     workspaces.push(cwd);
@@ -253,6 +479,11 @@ describe("CLI smoke tests", () => {
       runCli(["retrieve", "query", "--limit", "many"], cwd)
     ).rejects.toMatchObject({
       stderr: expect.stringContaining("Invalid --limit: expected an integer")
+    });
+    await expect(
+      runCli(["retrieve", "query", "--mode", "banana"], cwd)
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Invalid retrieval mode")
     });
   });
 });

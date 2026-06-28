@@ -18,20 +18,25 @@ export interface LoadedProject {
 
 async function openProject(context: ProjectContext): Promise<LoadedProject> {
   const db = openDatabase(context.storePath);
-  const repo = new AgentMemoryRepository(db);
-  let project = repo.getProjectByRoot(context.gitRoot);
+  try {
+    const repo = new AgentMemoryRepository(db);
+    let project = repo.getProjectByRoot(context.gitRoot);
 
-  if (!project) {
-    project = await buildProjectRecord(context);
-    repo.upsertProject(project);
+    if (!project) {
+      project = await buildProjectRecord(context);
+      repo.upsertProject(project);
+    }
+
+    return {
+      context,
+      project,
+      repo,
+      close: () => db.close()
+    };
+  } catch (error) {
+    db.close();
+    throw error;
   }
-
-  return {
-    context,
-    project,
-    repo,
-    close: () => db.close()
-  };
 }
 
 export async function initProject(

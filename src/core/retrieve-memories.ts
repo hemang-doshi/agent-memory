@@ -1,5 +1,7 @@
 import { CONFIDENCE_SCORES, SEVERITY_SCORES, TYPE_PRIORITIES } from "../domain/defaults.js";
-import type { MemoryRecord, RetrieveMemoriesInput } from "../domain/types.js";
+import type { MemoryRecord, RetrievalMode, RetrieveMemoriesInput } from "../domain/types.js";
+import { rerankMemories, type RerankReceipt } from "../ranking/reranker.js";
+import { searchVectorIndex } from "../vector/vector-index.js";
 import { parseCommandPolicyMatchType } from "../domain/validators.js";
 
 import { loadProject } from "./context.js";
@@ -26,6 +28,11 @@ interface ScoredMemory {
     useCountBoost: number;
     mistakeBoost: boolean;
     conflictWinner: boolean;
+    keywordMatch?: boolean;
+    keywordRank?: number;
+    vectorMatch?: boolean;
+    vectorScore?: number;
+    modes?: RetrievalMode[];
   };
   reason: string;
 }
@@ -189,6 +196,12 @@ function describeReason(signals: ScoredMemory["signals"]): string {
   if (signals.mistakeBoost) {
     reasons.push("regression prevention");
   }
+  if (signals.keywordMatch) {
+    reasons.push("keyword match");
+  }
+  if (signals.vectorMatch) {
+    reasons.push("vector match");
+  }
   if (signals.priority > 0) {
     reasons.push(`priority ${signals.priority}`);
   }
@@ -242,6 +255,25 @@ function attachRetrievalMetadata(scored: ScoredMemory): MemoryRecord {
   };
 }
 
+function attachRetrievalMetadataForMode(scored: ScoredMemory, mode: RetrievalMode): MemoryRecord {
+  const memory = attachRetrievalMetadata(scored);
+  const retrieval = memory.metadata.retrieval;
+  if (!retrieval || typeof retrieval !== "object") {
+    return memory;
+  }
+
+  return {
+    ...memory,
+    metadata: {
+      ...memory.metadata,
+      retrieval: {
+        ...retrieval,
+        mode
+      }
+    }
+  };
+}
+
 function selectResults(scored: ScoredMemory[], maxResults: number): ScoredMemory[] {
   const resolved = resolveConflictGroups(scored).sort((left, right) => right.score - left.score);
   const guaranteed = resolved.filter((entry) => entry.memory.pinned || entry.memory.priority > 0);
@@ -263,10 +295,145 @@ function selectResults(scored: ScoredMemory[], maxResults: number): ScoredMemory
   return selected;
 }
 
+function scoreKeywordMatches({
+  memories,
+  keywordMatches
+}: {
+  memories: MemoryRecord[];
+  keywordMatches: Array<{ memoryId: string; rank: number }>;
+}): ScoredMemory[] {
+  const byId = new Map(memories.map((memory) => [memory.id, memory]));
+  return keywordMatches.flatMap((match, index) => {
+    const memory = byId.get(match.memoryId);
+    if (!memory) {
+      return [];
+    }
+
+    const rankScore = Math.max(0, 100 - index);
+    const signals: ScoredMemory["signals"] = {
+      tokenOverlap: 0,
+      pathMatch: false,
+      tagMatch: false,
+      commandMatch: false,
+      pinned: memory.pinned,
+      priority: memory.priority,
+      recencyBoost: 0,
+      useCountBoost: 0,
+      mistakeBoost: false,
+      conflictWinner: false,
+      keywordMatch: true,
+      keywordRank: match.rank,
+      modes: ["keyword"]
+    };
+    return [{
+      memory,
+      score: rankScore + memory.priority * 8 + (memory.pinned ? 40 : 0),
+      signals,
+      reason: describeReason(signals)
+    }];
+  });
+}
+
+function scoreVectorMatches({
+  memories,
+  vectorMatches
+}: {
+  memories: MemoryRecord[];
+  vectorMatches: Array<{ memoryId: string; score: number }>;
+}): ScoredMemory[] {
+  const byId = new Map(memories.map((memory) => [memory.id, memory]));
+  return vectorMatches.flatMap((match) => {
+    const memory = byId.get(match.memoryId);
+    if (!memory) {
+      return [];
+    }
+
+    const signals: ScoredMemory["signals"] = {
+      tokenOverlap: 0,
+      pathMatch: false,
+      tagMatch: false,
+      commandMatch: false,
+      pinned: memory.pinned,
+      priority: memory.priority,
+      recencyBoost: 0,
+      useCountBoost: 0,
+      mistakeBoost: false,
+      conflictWinner: false,
+      vectorMatch: true,
+      vectorScore: match.score,
+      modes: ["vector"]
+    };
+    return [{
+      memory,
+      score: match.score * 100 + memory.priority * 8 + (memory.pinned ? 40 : 0),
+      signals,
+      reason: describeReason(signals)
+    }];
+  });
+}
+
+function mergeHybridScores(
+  deterministicScored: ScoredMemory[],
+  keywordScored: ScoredMemory[],
+  vectorScored: ScoredMemory[]
+): ScoredMemory[] {
+  const merged = new Map<string, ScoredMemory>();
+
+  for (const entry of deterministicScored) {
+    merged.set(entry.memory.id, {
+      ...entry,
+      signals: {
+        ...entry.signals,
+        modes: ["deterministic"]
+      }
+    });
+  }
+
+  const mergeEntry = (entry: ScoredMemory, source: RetrievalMode) => {
+    const current = merged.get(entry.memory.id);
+    if (!current) {
+      merged.set(entry.memory.id, {
+        ...entry,
+        signals: {
+          ...entry.signals,
+          modes: [source]
+        }
+      });
+      return;
+    }
+
+    const signals: ScoredMemory["signals"] = {
+      ...current.signals,
+      keywordMatch: current.signals.keywordMatch || entry.signals.keywordMatch,
+      keywordRank: entry.signals.keywordRank ?? current.signals.keywordRank,
+      vectorMatch: current.signals.vectorMatch || entry.signals.vectorMatch,
+      vectorScore: entry.signals.vectorScore ?? current.signals.vectorScore,
+      modes: Array.from(new Set([...(current.signals.modes ?? []), source]))
+    };
+    merged.set(entry.memory.id, {
+      memory: current.memory,
+      score: current.score + entry.score,
+      signals,
+      reason: describeReason(signals)
+    });
+  };
+
+  for (const entry of keywordScored) {
+    mergeEntry(entry, "keyword");
+  }
+
+  for (const entry of vectorScored) {
+    mergeEntry(entry, "vector");
+  }
+
+  return Array.from(merged.values()).sort((left, right) => right.score - left.score);
+}
+
 export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<MemoryRecord[]> {
   const loaded = await loadProject(input.cwd);
 
   try {
+    const mode = input.mode ?? "deterministic";
     const files = input.files ?? [];
     const queryTokens = tokenize(`${input.task} ${input.command ?? ""}`);
     const now = Date.now();
@@ -274,22 +441,63 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
       loaded.repo.listMemories(loaded.project.projectId)
     );
 
-    const scored = memories
-      .filter((memory) =>
-        isAgentVisibleMemory({
-          memory,
-          config: loaded.context.config,
-          now
-        })
-      )
+    const visibleMemories = memories.filter((memory) =>
+      isAgentVisibleMemory({
+        memory,
+        config: loaded.context.config,
+        now
+      })
+    );
+    const deterministicScored = visibleMemories
       .map((memory) => scoreMemory(memory, queryTokens, files, input.command))
       .filter(hasRelevanceSignal)
       .sort((left, right) => right.score - left.score);
+    const keywordScored =
+      mode === "keyword" || mode === "hybrid"
+        ? scoreKeywordMatches({
+            memories: visibleMemories,
+            keywordMatches: loaded.repo.searchKeywordIndex(
+              loaded.project.projectId,
+              `${input.task} ${input.command ?? ""}`,
+              Math.max(input.maxResults ?? loaded.context.config.retrieval.max_results, 1) * 4
+            )
+          })
+        : [];
+    const vectorScored =
+      mode === "vector" || mode === "hybrid"
+        ? scoreVectorMatches({
+            memories: visibleMemories,
+            vectorMatches: await searchVectorIndex({
+              cwd: input.cwd,
+              query: `${input.task} ${input.command ?? ""}`,
+              limit: Math.max(input.maxResults ?? loaded.context.config.retrieval.max_results, 1) * 4
+            })
+          })
+        : [];
+    const scored =
+      mode === "keyword"
+        ? keywordScored
+        : mode === "vector"
+          ? vectorScored
+        : mode === "hybrid"
+          ? mergeHybridScores(deterministicScored, keywordScored, vectorScored)
+          : deterministicScored;
     const resolved = selectResults(
       scored,
       input.maxResults ?? loaded.context.config.retrieval.max_results
     );
-    const results = resolved.map(attachRetrievalMetadata);
+    let results = resolved.map((entry) => attachRetrievalMetadataForMode(entry, mode));
+    let rerankReceipt: RerankReceipt | null = null;
+    if (input.rerank || loaded.context.config.rerank.enabled) {
+      const reranked = rerankMemories({
+        memories: results,
+        task: input.task,
+        provider: input.reranker ?? loaded.context.config.rerank.provider,
+        timeoutMs: loaded.context.config.rerank.timeout_ms
+      });
+      results = reranked.memories;
+      rerankReceipt = reranked.receipt;
+    }
     const matchedMemoryIds = results.map((memory) => memory.id);
 
     loaded.repo.markMemoriesRetrieved(matchedMemoryIds);
@@ -301,7 +509,9 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
       payload: {
         task: input.task,
         command: input.command ?? null,
+        mode,
         matchedMemoryIds,
+        rerank: rerankReceipt,
         scoring: resolved.map((entry) => ({
           memoryId: entry.memory.id,
           score: entry.score,

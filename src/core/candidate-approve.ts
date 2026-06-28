@@ -64,6 +64,7 @@ export async function approveCandidate({
       conflictGroup: null,
       safetyFlags: [],
       redactionStatus: "none",
+      trustLevel: "reviewed",
       metadata: {
         candidateId: existing.candidateId,
         evidence: existing.evidence,

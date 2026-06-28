@@ -1,5 +1,25 @@
 # Architecture
 
+## V2 Module Boundaries
+
+Agent Memory V2 keeps SQLite as the local source of truth and separates new production behavior into focused modules:
+
+- `src/domain/`: public record shapes, enums, defaults, and validators.
+- `src/db/`: SQLite schema, migrations-at-open, repository access, keyword FTS storage.
+- `src/core/`: V1-compatible use cases such as memory CRUD, retrieval orchestration, packets, protocol receipts, candidates, sessions, preflight, scan, and doctor.
+- `src/vector/`: local embedding provider abstraction and vector index.
+- `src/ranking/`: optional reranker abstraction and structured output parser.
+- `src/safety/`: audit and quarantine workflows.
+- `src/lifecycle/`: review, dedupe, merge, supersede, and quality reporting.
+- `src/ingestion/`: file/log ingestion, chunking, import, export, and provenance.
+- `src/ops/`: migration status, backup, restore, and repair.
+- `src/mcp/`: MCP manifest, read-only project loader, resources, tools, params, and server shim.
+- `src/adapters/`: adapter registry and idempotent install/uninstall flows.
+- `src/evals/`: deterministic evals and local live-agent proof harness.
+- `src/cli/`: CLI parsing and command routing.
+
+Safety-sensitive behavior runs through deterministic eligibility and policy code. Vector search and reranking can affect relevance ordering, but they do not make unsafe memory injectable.
+
 Agent Memory is a local-first TypeScript CLI backed by SQLite. Its main responsibility is to make project memory auditable and useful to coding agents without requiring external services.
 
 ## Runtime Shape

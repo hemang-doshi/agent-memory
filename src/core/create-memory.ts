@@ -71,6 +71,7 @@ export async function createMemory(input: CreateMemoryInput): Promise<MemoryReco
       conflictGroup: input.conflictGroup ?? null,
       safetyFlags: input.safetyFlags ?? [],
       redactionStatus: input.redactionStatus ?? "none",
+      trustLevel: input.trustLevel ?? "reviewed",
       metadata
     };
 

@@ -9,7 +9,12 @@ export function isAgentVisibleMemory({
   config: ProjectConfig;
   now?: number;
 }): boolean {
-  if (memory.status === "archived" || memory.status === "rejected" || memory.status === "superseded") {
+  if (
+    memory.status === "archived" ||
+    memory.status === "rejected" ||
+    memory.status === "quarantined" ||
+    memory.status === "superseded"
+  ) {
     return false;
   }
 
@@ -21,11 +26,25 @@ export function isAgentVisibleMemory({
     return false;
   }
 
-  if (memory.redactionStatus !== "none" || memory.safetyFlags.includes("secret")) {
+  const excludedSafetyFlags = new Set([
+    "secret",
+    "unsafe",
+    "prompt_injection",
+    "quarantined",
+    "redacted"
+  ]);
+  if (
+    memory.redactionStatus !== "none" ||
+    memory.safetyFlags.some((flag) => excludedSafetyFlags.has(flag))
+  ) {
     return false;
   }
 
   if (memory.metadata.doNotInclude === true || memory.metadata.negative === true) {
+    return false;
+  }
+
+  if (memory.trustLevel === "untrusted") {
     return false;
   }
 

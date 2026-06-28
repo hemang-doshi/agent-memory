@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE TABLE IF NOT EXISTS memories (
   id TEXT PRIMARY KEY,
-  project_id TEXT,
+  project_id TEXT NOT NULL REFERENCES projects(project_id),
   scope TEXT NOT NULL,
   type TEXT NOT NULL,
   content TEXT NOT NULL,
@@ -36,12 +36,23 @@ CREATE TABLE IF NOT EXISTS memories (
   conflict_group TEXT,
   safety_flags_json TEXT NOT NULL DEFAULT '[]',
   redaction_status TEXT NOT NULL DEFAULT 'none',
+  trust_level TEXT NOT NULL DEFAULT 'reviewed',
   metadata_json TEXT NOT NULL
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_keyword_index USING fts5(
+  memory_id UNINDEXED,
+  project_id UNINDEXED,
+  content,
+  summary,
+  tags,
+  paths,
+  metadata
 );
 
 CREATE TABLE IF NOT EXISTS events (
   event_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(project_id),
   event_type TEXT NOT NULL,
   timestamp TEXT NOT NULL,
   actor TEXT NOT NULL,
@@ -49,8 +60,8 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE TABLE IF NOT EXISTS memory_links (
-  memory_id TEXT NOT NULL,
-  related_memory_id TEXT NOT NULL,
+  memory_id TEXT NOT NULL REFERENCES memories(id),
+  related_memory_id TEXT NOT NULL REFERENCES memories(id),
   PRIMARY KEY (memory_id, related_memory_id)
 );
 
@@ -61,7 +72,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(project_id),
   task TEXT NOT NULL,
   status TEXT NOT NULL,
   started_at TEXT NOT NULL,
@@ -71,8 +82,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS protocol_receipts (
   receipt_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  session_id TEXT,
+  project_id TEXT NOT NULL REFERENCES projects(project_id),
+  session_id TEXT REFERENCES sessions(session_id),
   receipt_type TEXT NOT NULL,
   payload_json TEXT NOT NULL,
   created_at TEXT NOT NULL
@@ -80,8 +91,8 @@ CREATE TABLE IF NOT EXISTS protocol_receipts (
 
 CREATE TABLE IF NOT EXISTS memory_candidates (
   candidate_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  session_id TEXT,
+  project_id TEXT NOT NULL REFERENCES projects(project_id),
+  session_id TEXT REFERENCES sessions(session_id),
   type TEXT NOT NULL,
   content TEXT NOT NULL,
   scope TEXT NOT NULL,
@@ -95,7 +106,7 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
   created_at TEXT NOT NULL,
   reviewed_at TEXT,
   review_reason TEXT,
-  target_memory_id TEXT,
+  target_memory_id TEXT REFERENCES memories(id),
   metadata_json TEXT NOT NULL DEFAULT '{}'
 );
 

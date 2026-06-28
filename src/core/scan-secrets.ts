@@ -22,6 +22,7 @@ export interface ScanFinding {
   id: string;
   field: string;
   label: string;
+  severity: "low" | "medium" | "high";
 }
 
 export interface ScanResult {
@@ -29,7 +30,44 @@ export interface ScanResult {
   summary: string;
 }
 
-export async function scanForSecrets({ cwd }: { cwd: string }): Promise<ScanResult> {
+const PROMPT_INJECTION_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /\bignore (all )?(previous|prior|above) instructions\b/i, label: "prompt injection instruction override" },
+  { pattern: /\bdisregard (all )?(previous|prior|above) instructions\b/i, label: "prompt injection disregard instruction" },
+  { pattern: /\breveal (system|developer|hidden) (prompt|instructions)\b/i, label: "prompt injection prompt exfiltration" },
+  { pattern: /\bdo not tell (the )?user\b/i, label: "prompt injection hidden instruction" }
+];
+
+function pushPatternFindings({
+  findings,
+  source,
+  id,
+  field,
+  value,
+  deep
+}: {
+  findings: ScanFinding[];
+  source: string;
+  id: string;
+  field: string;
+  value: string;
+  deep: boolean;
+}): void {
+  for (const { pattern, label } of SECRET_PATTERNS) {
+    if (pattern.test(value)) {
+      findings.push({ source, id, field, label, severity: "high" });
+    }
+  }
+  if (!deep) {
+    return;
+  }
+  for (const { pattern, label } of PROMPT_INJECTION_PATTERNS) {
+    if (pattern.test(value)) {
+      findings.push({ source, id, field, label, severity: "medium" });
+    }
+  }
+}
+
+export async function scanForSecrets({ cwd, deep = false }: { cwd: string; deep?: boolean }): Promise<ScanResult> {
   const loaded = await loadProject(cwd);
 
   try {
@@ -37,53 +75,79 @@ export async function scanForSecrets({ cwd }: { cwd: string }): Promise<ScanResu
 
     const memories = loaded.repo.listMemories(loaded.project.projectId);
     for (const memory of memories) {
-      for (const { pattern, label } of SECRET_PATTERNS) {
-        if (pattern.test(memory.content)) {
-          findings.push({ source: "memory", id: memory.id, field: "content", label });
-        }
-        if (memory.summary && pattern.test(memory.summary)) {
-          findings.push({ source: "memory", id: memory.id, field: "summary", label });
-        }
+      pushPatternFindings({
+        findings,
+        source: "memory",
+        id: memory.id,
+        field: "content",
+        value: memory.content,
+        deep
+      });
+      if (memory.summary) {
+        pushPatternFindings({
+          findings,
+          source: "memory",
+          id: memory.id,
+          field: "summary",
+          value: memory.summary,
+          deep
+        });
       }
-      const metadataStr = JSON.stringify(memory.metadata);
-      for (const { pattern, label } of SECRET_PATTERNS) {
-        if (pattern.test(metadataStr)) {
-          findings.push({ source: "memory", id: memory.id, field: "metadata", label });
-        }
-      }
+      pushPatternFindings({
+        findings,
+        source: "memory",
+        id: memory.id,
+        field: "metadata",
+        value: JSON.stringify(memory.metadata),
+        deep
+      });
     }
 
     const events = loaded.repo.listEvents(loaded.project.projectId);
     for (const event of events) {
-      const payloadStr = JSON.stringify(event.payload);
-      for (const { pattern, label } of SECRET_PATTERNS) {
-        if (pattern.test(payloadStr)) {
-          findings.push({ source: "event", id: event.eventId, field: "payload", label });
-        }
-      }
+      pushPatternFindings({
+        findings,
+        source: "event",
+        id: event.eventId,
+        field: "payload",
+        value: JSON.stringify(event.payload),
+        deep
+      });
     }
 
     const candidates = loaded.repo.listMemoryCandidates(loaded.project.projectId);
     for (const candidate of candidates) {
-      for (const { pattern, label } of SECRET_PATTERNS) {
-        if (pattern.test(candidate.content)) {
-          findings.push({ source: "candidate", id: candidate.candidateId, field: "content", label });
-        }
-        if (pattern.test(candidate.evidence)) {
-          findings.push({ source: "candidate", id: candidate.candidateId, field: "evidence", label });
-        }
-      }
-      const metadataStr = JSON.stringify(candidate.metadata);
-      for (const { pattern, label } of SECRET_PATTERNS) {
-        if (pattern.test(metadataStr)) {
-          findings.push({ source: "candidate", id: candidate.candidateId, field: "metadata", label });
-        }
-      }
+      pushPatternFindings({
+        findings,
+        source: "candidate",
+        id: candidate.candidateId,
+        field: "content",
+        value: candidate.content,
+        deep
+      });
+      pushPatternFindings({
+        findings,
+        source: "candidate",
+        id: candidate.candidateId,
+        field: "evidence",
+        value: candidate.evidence,
+        deep
+      });
+      pushPatternFindings({
+        findings,
+        source: "candidate",
+        id: candidate.candidateId,
+        field: "metadata",
+        value: JSON.stringify(candidate.metadata),
+        deep
+      });
     }
 
     const summary = findings.length === 0
-      ? "No potential secrets found."
-      : `Found ${findings.length} potential secret(s) in local store.`;
+      ? deep
+        ? "No potential secrets or prompt-injection patterns found."
+        : "No potential secrets found."
+      : `Found ${findings.length} potential safety finding(s) in local store.`;
 
     return { findings, summary };
   } finally {

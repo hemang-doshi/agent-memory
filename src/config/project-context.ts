@@ -5,7 +5,7 @@ import { execFile as rawExecFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { DEFAULT_PROJECT_CONFIG } from "../domain/defaults.js";
-import type { InitProjectResult, ProjectConfig, ProjectRecord } from "../domain/types.js";
+import type { InitProjectResult, ProjectConfig, ProjectRecord, RerankerMode } from "../domain/types.js";
 import { parseMemoryScope, parsePreflightDecision } from "../domain/validators.js";
 
 const execFile = promisify(rawExecFile);
@@ -17,6 +17,20 @@ function parseDefaultPreflightDecision(value: unknown): ProjectConfig["preflight
   }
 
   return parsed;
+}
+
+function parseVectorProvider(value: unknown): ProjectConfig["vector"]["provider"] {
+  if (value === "local" || value === "mock" || value === "external") {
+    return value;
+  }
+  throw new Error(`Invalid vector.provider: ${String(value)}. Expected one of: local, mock, external`);
+}
+
+function parseRerankerProvider(value: unknown): RerankerMode {
+  if (value === "none" || value === "noop" || value === "mock") {
+    return value;
+  }
+  throw new Error(`Invalid rerank.provider: ${String(value)}. Expected one of: none, noop, mock`);
 }
 
 export interface ProjectContext {
@@ -170,6 +184,12 @@ export function loadConfig(configPath: string): ProjectConfig {
     raw.preflight && typeof raw.preflight === "object" ? raw.preflight : {};
   const rawRetrieval =
     raw.retrieval && typeof raw.retrieval === "object" ? raw.retrieval : {};
+  const rawVector =
+    raw.vector && typeof raw.vector === "object" ? raw.vector : {};
+  const rawRerank =
+    raw.rerank && typeof raw.rerank === "object" ? raw.rerank : {};
+  const rawMcp =
+    raw.mcp && typeof raw.mcp === "object" ? raw.mcp : {};
 
   const config: ProjectConfig = {
     ...DEFAULT_PROJECT_CONFIG,
@@ -193,6 +213,40 @@ export function loadConfig(configPath: string): ProjectConfig {
     retrieval: {
       ...DEFAULT_PROJECT_CONFIG.retrieval,
       ...rawRetrieval
+    },
+    vector: {
+      enabled:
+        (rawVector as Partial<ProjectConfig["vector"]>).enabled === undefined
+          ? DEFAULT_PROJECT_CONFIG.vector.enabled
+          : Boolean((rawVector as Partial<ProjectConfig["vector"]>).enabled),
+      provider:
+        (rawVector as Partial<ProjectConfig["vector"]>).provider === undefined
+          ? DEFAULT_PROJECT_CONFIG.vector.provider
+          : parseVectorProvider((rawVector as Partial<ProjectConfig["vector"]>).provider)
+    },
+    rerank: {
+      enabled:
+        (rawRerank as Partial<ProjectConfig["rerank"]>).enabled === undefined
+          ? DEFAULT_PROJECT_CONFIG.rerank.enabled
+          : Boolean((rawRerank as Partial<ProjectConfig["rerank"]>).enabled),
+      provider:
+        (rawRerank as Partial<ProjectConfig["rerank"]>).provider === undefined
+          ? DEFAULT_PROJECT_CONFIG.rerank.provider
+          : parseRerankerProvider((rawRerank as Partial<ProjectConfig["rerank"]>).provider),
+      timeout_ms:
+        (rawRerank as Partial<ProjectConfig["rerank"]>).timeout_ms === undefined
+          ? DEFAULT_PROJECT_CONFIG.rerank.timeout_ms
+          : Number((rawRerank as Partial<ProjectConfig["rerank"]>).timeout_ms)
+    },
+    mcp: {
+      write_tools_enabled:
+        (rawMcp as Partial<ProjectConfig["mcp"]>).write_tools_enabled === undefined
+          ? DEFAULT_PROJECT_CONFIG.mcp.write_tools_enabled
+          : Boolean((rawMcp as Partial<ProjectConfig["mcp"]>).write_tools_enabled),
+      candidate_approval_enabled:
+        (rawMcp as Partial<ProjectConfig["mcp"]>).candidate_approval_enabled === undefined
+          ? DEFAULT_PROJECT_CONFIG.mcp.candidate_approval_enabled
+          : Boolean((rawMcp as Partial<ProjectConfig["mcp"]>).candidate_approval_enabled)
     }
   };
 
@@ -202,6 +256,10 @@ export function loadConfig(configPath: string): ProjectConfig {
 
   if (!Number.isFinite(config.retrieval.max_results) || config.retrieval.max_results <= 0) {
     throw new Error("Invalid retrieval.max_results: expected a positive number.");
+  }
+
+  if (!Number.isFinite(config.rerank.timeout_ms) || config.rerank.timeout_ms <= 0) {
+    throw new Error("Invalid rerank.timeout_ms: expected a positive number.");
   }
 
   return config;

@@ -12,6 +12,19 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
     include_unverified: false,
     include_stale: false,
     max_results: 8
+  },
+  vector: {
+    enabled: false,
+    provider: "local"
+  },
+  rerank: {
+    enabled: false,
+    provider: "noop",
+    timeout_ms: 750
+  },
+  mcp: {
+    write_tools_enabled: false,
+    candidate_approval_enabled: false
   }
 };
 

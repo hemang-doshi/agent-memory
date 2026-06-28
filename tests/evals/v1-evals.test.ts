@@ -96,6 +96,8 @@ async function seedMemories(
 
     if (project === "foreign") {
       const db = new DatabaseSync(`${cwd}/.agent-memory/memory.db`);
+      db.prepare("INSERT OR IGNORE INTO projects (project_id, name, git_root, created_at, updated_at, config_path) VALUES (?, ?, ?, ?, ?, ?)")
+        .run("proj_foreign", "foreign", ".", new Date().toISOString(), new Date().toISOString(), ".");
       db.prepare("UPDATE memories SET project_id = ? WHERE id = ?").run("proj_foreign", memory.id);
       db.close();
     }

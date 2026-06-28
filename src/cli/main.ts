@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 
+import { listAdapters, installAdapter, uninstallAdapter } from "../adapters/registry.js";
 import { createMemory } from "../core/create-memory.js";
 import { doctor } from "../core/doctor.js";
 import { explainMemory } from "../core/explain-memory.js";
@@ -8,6 +9,7 @@ import { forgetMemory } from "../core/forget-memory.js";
 import { generatePack } from "../core/generate-pack.js";
 import { initProject } from "../core/init-project.js";
 import { installInstructions } from "../core/install-instructions.js";
+import { rebuildKeywordIndex } from "../core/keyword-index.js";
 import { approveCandidate } from "../core/candidate-approve.js";
 import { formatBenchmarkReport } from "../core/benchmark/format-benchmark.js";
 import { runBenchmarkFixturePath, runProtocolBenchmarks } from "../core/benchmark/run-benchmarks.js";
@@ -32,11 +34,32 @@ import { startSession } from "../core/session-start.js";
 import { proposeCandidate } from "../core/candidate-propose.js";
 import { uninstallInstructions } from "../core/uninstall-instructions.js";
 import { updateMemory } from "../core/update-memory.js";
+import { runLiveAgentEval } from "../evals/live/live-agent.js";
+import {
+  dedupeMemories,
+  dedupeResolve,
+  mergeMemories,
+  purgeExpired,
+  qualityReport,
+  reviewMemories,
+  supersedeMemory
+} from "../lifecycle/lifecycle.js";
+import {
+  exportMemoryStore,
+  importMemoryStore,
+  ingestFileAsCandidates,
+  ingestLogAsCandidates
+} from "../ingestion/index.js";
+import { serveMcpOnce, serveMcpStdio } from "../mcp/server.js";
+import { backupStore, migrateUp, migrationStatus, repairStore, restoreStore } from "../ops/storage.js";
+import { auditSafety } from "../safety/audit.js";
+import { quarantineMemory, unquarantineMemory } from "../safety/quarantine.js";
+import { rebuildVectorIndex } from "../vector/vector-index.js";
 import { formatTextList, formatTextPreflight } from "../formatters/output.js";
 import { formatDogfoodReport } from "../formatters/dogfood-report.js";
 import { formatProtocolCompliance } from "../formatters/protocol-check.js";
 import { formatProtocolStart } from "../formatters/protocol-start.js";
-import type { CreateMemoryInput, MemoryRecord } from "../domain/types.js";
+import type { CreateMemoryInput, MemoryRecord, RerankerMode, RetrievalMode } from "../domain/types.js";
 import {
   parseCandidateStatus,
   parseCandidateType,
@@ -153,6 +176,61 @@ function parseExitCode(value: string | undefined): number | undefined {
   return Number(value);
 }
 
+function parseRetrievalMode(value: string | boolean | undefined): RetrievalMode | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new Error("Invalid retrieval mode: expected deterministic, keyword, hybrid, or vector");
+  }
+  if (value === "deterministic" || value === "keyword" || value === "hybrid" || value === "vector") {
+    return value;
+  }
+  throw new Error(`Invalid retrieval mode: ${value}`);
+}
+
+function parseRerankerMode(value: string | boolean | undefined): RerankerMode | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new Error("Invalid reranker mode: expected none, noop, or mock");
+  }
+  if (value === "none" || value === "noop" || value === "mock") {
+    return value;
+  }
+  throw new Error(`Invalid reranker mode: ${value}`);
+}
+
+function explainRetrievedMemories(memories: MemoryRecord[]): Array<{
+  memoryId: string;
+  score: number | null;
+  reason: string | null;
+  mode: string | null;
+  signals: unknown;
+}> {
+  return memories.map((memory) => {
+    const retrieval = memory.metadata.retrieval;
+    if (!retrieval || typeof retrieval !== "object") {
+      return {
+        memoryId: memory.id,
+        score: null,
+        reason: null,
+        mode: null,
+        signals: null
+      };
+    }
+
+    return {
+      memoryId: memory.id,
+      score: "score" in retrieval && typeof retrieval.score === "number" ? retrieval.score : null,
+      reason: "reason" in retrieval && typeof retrieval.reason === "string" ? retrieval.reason : null,
+      mode: "mode" in retrieval && typeof retrieval.mode === "string" ? retrieval.mode : null,
+      signals: "signals" in retrieval ? retrieval.signals : null
+    };
+  });
+}
+
 function helpText(): string {
   return [
     "Agent Memory CLI",
@@ -161,7 +239,8 @@ function helpText(): string {
     "  agentmem init [--git-init] [--json]",
     "  agentmem install-instructions",
     "  agentmem uninstall-instructions",
-    "  agentmem doctor [--json]",
+    "  agentmem doctor [--index|--deep] [--json]",
+    "  agentmem adapters list|install|uninstall <adapter> [--json]",
     "  agentmem session start \"<task>\" [--json]",
     "  agentmem session finish --session <session-id> --summary \"...\" [--json]",
     "  agentmem session receipt --session <session-id> [--json]",
@@ -175,11 +254,15 @@ function helpText(): string {
     "  agentmem decision <content>",
     "  agentmem failed <content>",
     "  agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block] [--suggest <action>]",
-    "  agentmem retrieve <task> [--file <path>] [--command <command>] [--limit n] [--json]",
+    "  agentmem index [--rebuild|--vector] [--json]",
+    "  agentmem retrieve <task> [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--explain] [--file <path>] [--command <command>] [--limit n] [--json]",
+    "  agentmem explain-retrieval <task> [--mode deterministic|keyword|hybrid|vector] [--rerank] [--json]",
     "  agentmem inject <task> [--session <session-id>] [--file <path>] [--command <command>] [--json|--format markdown]",
     "  agentmem pack <task> [--session <session-id>] [--file <path>] [--command <command>] [--json]",
     "  agentmem preflight --command <command> [--session <session-id>] [--json]",
     "  agentmem eval [--json]",
+    "  agentmem eval live [--write-report] [--json]",
+    "  agentmem mcp serve [--json]",
     "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" [--evidence \"...\"] [--evidence-event <event-id>] [--json]",
     "  agentmem candidate list [--status proposed] [--json]",
     "  agentmem candidate approve <candidate-id> [--json]",
@@ -187,13 +270,30 @@ function helpText(): string {
     "  agentmem manage --plan [--json]",
     "  agentmem benchmark run --fixture <path> [--json]",
     "  agentmem benchmark run --all [--json]",
-    "  agentmem search <query> [--type <type>] [--json]",
+    "  agentmem search <query> [--type <type>] [--all] [--json]",
     "  agentmem list [--type <type>] [--all] [--json]",
     "  agentmem update <memory-id> --reason <reason> [--content \"...\"] [--type <type>] [--status <status>] [--tags a,b] [--paths a,b] [--pinned true|false] [--priority n]",
     "  agentmem forget <memory-id> --reason <reason>",
+    "  agentmem review [--json]",
+    "  agentmem dedupe [--resolve] [--json]",
+    "  agentmem merge --target <memory-id> --source <memory-id> --reason <reason> [--json]",
+    "  agentmem supersede --old <memory-id> --new <memory-id> --reason <reason> [--json]",
+    "  agentmem quality [--json]",
+    "  agentmem purge-expired [--json]",
+    "  agentmem ingest <file> --as candidates [--json]",
+    "  agentmem ingest-log <file> --as candidates [--json]",
+    "  agentmem export [--output <file>] [--json]",
+    "  agentmem import <file> [--json]",
+    "  agentmem quarantine <memory-id> --reason <reason> [--redact] [--json]",
+    "  agentmem unquarantine <memory-id> --reason <reason> [--json]",
+    "  agentmem audit [--json]",
+    "  agentmem migrate status|up [--json]",
+    "  agentmem backup [--output <dir>] [--json]",
+    "  agentmem restore <backup-path> [--json]",
+    "  agentmem repair [--json]",
     "  agentmem stale <memory-id> --reason <reason>",
     "  agentmem explain <memory-id>",
-    "  agentmem scan [--json]",
+    "  agentmem scan [--deep] [--json]",
     ""
   ].join("\n");
 }
@@ -288,6 +388,11 @@ async function main(): Promise<void> {
   const parsed = parseArgs(rest);
   const asJson = wantsJson(parsed);
 
+  if (parsed.options.help) {
+    render(helpText(), false);
+    return;
+  }
+
   switch (command) {
     case "init": {
       const result = await initProject({ cwd, gitInit: Boolean(parsed.options["git-init"]) });
@@ -325,8 +430,41 @@ async function main(): Promise<void> {
       render(asJson ? result : `Removed Agent Memory router from ${result.agentsPath}.`, asJson);
       return;
     }
+    case "adapters": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "list") {
+        const result = listAdapters();
+        render(asJson ? result : result.map((adapter) => `${adapter.id}: ${adapter.targetPath}`).join("\n"), asJson);
+        return;
+      }
+
+      if (subcommand === "install") {
+        const adapter = parsed.positionals[1];
+        if (!adapter) {
+          throw new Error("adapters install requires an adapter id");
+        }
+        const result = await installAdapter({ cwd, adapter });
+        render(asJson ? result : `Installed ${result.adapter} adapter at ${result.path}.`, asJson);
+        return;
+      }
+
+      if (subcommand === "uninstall") {
+        const adapter = parsed.positionals[1];
+        if (!adapter) {
+          throw new Error("adapters uninstall requires an adapter id");
+        }
+        const result = await uninstallAdapter({ cwd, adapter });
+        render(asJson ? result : `Uninstalled ${result.adapter} adapter from ${result.path}.`, asJson);
+        return;
+      }
+
+      throw new Error("Unknown adapters command. Run `agentmem help` for usage.");
+    }
     case "doctor": {
-      const result = await doctor({ cwd });
+      const result = await doctor({
+        cwd,
+        includeIndex: Boolean(parsed.options.index) || Boolean(parsed.options.deep)
+      });
       render(
         asJson
           ? result
@@ -335,11 +473,47 @@ async function main(): Promise<void> {
               `agentsMdExists: ${result.agentsMdExists}`,
               `routerInstalled: ${result.routerInstalled}`,
               `storePath: ${result.storePath}`,
-              `configPath: ${result.configPath}`
+              `configPath: ${result.configPath}`,
+              result.index
+                ? [
+                    `keywordIndex: ${result.index.keyword ? JSON.stringify(result.index.keyword) : "unavailable"}`,
+                    `vectorIndex: ${result.index.vector ? JSON.stringify(result.index.vector) : "unavailable"}`
+                  ].join("\n")
+                : ""
+            ].filter(Boolean).join("\n"),
+        asJson
+      );
+      return;
+    }
+    case "index": {
+      const result = parsed.options.vector
+        ? await rebuildVectorIndex({ cwd })
+        : await rebuildKeywordIndex({ cwd });
+      render(
+        asJson
+          ? result
+          : [
+              `indexedMemories: ${result.indexedMemories}`,
+              `eligibleMemories: ${result.eligibleMemories}`,
+              `stale: ${result.stale}`
             ].join("\n"),
         asJson
       );
       return;
+    }
+    case "mcp": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "serve") {
+        if (asJson) {
+          const result = await serveMcpOnce({ cwd });
+          render(result, true);
+          return;
+        }
+        await serveMcpStdio({ cwd });
+        return;
+      }
+
+      throw new Error("Unknown mcp command. Run `agentmem help` for usage.");
     }
     case "session": {
       const subcommand = parsed.positionals[0];
@@ -607,12 +781,47 @@ async function main(): Promise<void> {
         task,
         files: parseStringList(parsed, "files") ?? parseStringList(parsed, "file"),
         command: typeof parsed.options.command === "string" ? parsed.options.command : undefined,
-        maxResults: parseIntegerOption(parsed, "limit")
+        maxResults: parseIntegerOption(parsed, "limit"),
+        mode: parseRetrievalMode(parsed.options.mode),
+        explain: Boolean(parsed.options.explain),
+        rerank: Boolean(parsed.options.rerank),
+        reranker: parseRerankerMode(parsed.options.reranker)
       });
+      const jsonResult = {
+        memories,
+        matchedMemoryIds: memories.map((memory) => memory.id),
+        ...(parsed.options.explain ? { explanations: explainRetrievedMemories(memories) } : {})
+      };
+      render(
+        asJson ? jsonResult : formatTextList(memories),
+        asJson
+      );
+      return;
+    }
+    case "explain-retrieval": {
+      const task = parsed.positionals.join(" ").trim();
+      if (!task) {
+        throw new Error("explain-retrieval requires a task description");
+      }
+
+      const memories = await retrieveMemories({
+        cwd,
+        task,
+        files: parseStringList(parsed, "files") ?? parseStringList(parsed, "file"),
+        command: typeof parsed.options.command === "string" ? parsed.options.command : undefined,
+        maxResults: parseIntegerOption(parsed, "limit"),
+        mode: parseRetrievalMode(parsed.options.mode),
+        explain: true,
+        rerank: Boolean(parsed.options.rerank),
+        reranker: parseRerankerMode(parsed.options.reranker)
+      });
+      const explanations = explainRetrievedMemories(memories);
       render(
         asJson
-          ? { memories, matchedMemoryIds: memories.map((memory) => memory.id) }
-          : formatTextList(memories),
+          ? { memories, matchedMemoryIds: memories.map((memory) => memory.id), explanations }
+          : explanations
+              .map((item) => `${item.memoryId}: ${item.reason ?? "matched task context"}`)
+              .join("\n"),
         asJson
       );
       return;
@@ -700,7 +909,190 @@ async function main(): Promise<void> {
       render(asJson ? result : `Archived ${result.id}.`, asJson);
       return;
     }
+    case "review": {
+      const result = await reviewMemories({ cwd });
+      render(asJson ? result : result.needsReview.map((item) => `${item.memoryId}: ${item.reasons.join(", ")}`).join("\n"), asJson);
+      return;
+    }
+    case "dedupe": {
+      if (parsed.options.resolve) {
+        const result = await dedupeResolve({ cwd });
+        render(
+          asJson ? result : `Resolved ${result.resolved} duplicate group(s).\n${
+            result.groups.map((g) => `  ${g.target}: merged ${g.mergedSources.join(", ")}`).join("\n")
+          }`,
+          asJson
+        );
+        return;
+      }
+      const result = await dedupeMemories({ cwd });
+      render(asJson ? result : result.duplicateGroups.map((group) => `${group.memoryIds.join(", ")}: ${group.content}`).join("\n"), asJson);
+      return;
+    }
+    case "merge": {
+      const result = await mergeMemories({
+        cwd,
+        targetMemoryId: requireOption(parsed, "target"),
+        sourceMemoryId: requireOption(parsed, "source"),
+        reason: requireOption(parsed, "reason")
+      });
+      render(asJson ? result : `Merged ${result.source.id} into ${result.target.id}.`, asJson);
+      return;
+    }
+    case "supersede": {
+      const result = await supersedeMemory({
+        cwd,
+        oldMemoryId: requireOption(parsed, "old"),
+        newMemoryId: requireOption(parsed, "new"),
+        reason: requireOption(parsed, "reason")
+      });
+      render(asJson ? result : `Superseded ${result.oldMemory.id} with ${result.newMemory.id}.`, asJson);
+      return;
+    }
+    case "quality": {
+      const result = await qualityReport({ cwd });
+      render(asJson ? result : JSON.stringify(result.summary, null, 2), asJson);
+      return;
+    }
+    case "purge-expired": {
+      const result = await purgeExpired({ cwd });
+      render(
+        asJson ? result : `Purged ${result.purged} expired memories.${result.expiredIds.length > 0 ? `\n${result.expiredIds.join("\n")}` : ""}`,
+        asJson
+      );
+      return;
+    }
+    case "ingest": {
+      const file = parsed.positionals[0];
+      if (!file) {
+        throw new Error("ingest requires a file path");
+      }
+      const as = optionalString(parsed, "as") ?? "candidates";
+      if (as !== "candidates") {
+        throw new Error("ingest currently supports only --as candidates");
+      }
+      const result = await ingestFileAsCandidates({ cwd, file, as });
+      render(asJson ? result : `Ingested ${result.chunks} chunk(s) from ${result.sourcePath}.`, asJson);
+      return;
+    }
+    case "ingest-log": {
+      const file = parsed.positionals[0];
+      if (!file) {
+        throw new Error("ingest-log requires a file path");
+      }
+      const as = optionalString(parsed, "as") ?? "candidates";
+      if (as !== "candidates") {
+        throw new Error("ingest-log currently supports only --as candidates");
+      }
+      const result = await ingestLogAsCandidates({ cwd, file, as });
+      render(asJson ? result : `Ingested ${result.chunks} log chunk(s) from ${result.sourcePath}.`, asJson);
+      return;
+    }
+    case "export": {
+      const result = await exportMemoryStore({
+        cwd,
+        output: optionalString(parsed, "output")
+      });
+      render(asJson ? result : `Exported ${result.memories.length} memories and ${result.candidates.length} candidates.`, asJson);
+      return;
+    }
+    case "import": {
+      const file = parsed.positionals[0];
+      if (!file) {
+        throw new Error("import requires a file path");
+      }
+      const result = await importMemoryStore({ cwd, file });
+      render(asJson ? result : `Imported ${result.importedMemories} memories and ${result.importedCandidates} candidates.`, asJson);
+      return;
+    }
+    case "quarantine": {
+      const memoryId = parsed.positionals[0];
+      if (!memoryId) {
+        throw new Error("quarantine requires a memory id");
+      }
+      const result = await quarantineMemory({
+        cwd,
+        memoryId,
+        reason: requireOption(parsed, "reason"),
+        redact: Boolean(parsed.options.redact)
+      });
+      render(asJson ? result : `Quarantined ${result.id}.`, asJson);
+      return;
+    }
+    case "unquarantine": {
+      const memoryId = parsed.positionals[0];
+      if (!memoryId) {
+        throw new Error("unquarantine requires a memory id");
+      }
+      const result = await unquarantineMemory({
+        cwd,
+        memoryId,
+        reason: requireOption(parsed, "reason")
+      });
+      render(asJson ? result : `Unquarantined ${result.id}.`, asJson);
+      return;
+    }
+    case "audit": {
+      const result = await auditSafety({ cwd });
+      render(asJson ? result : JSON.stringify(result.summary, null, 2), asJson);
+      return;
+    }
+    case "migrate": {
+      const subcommand = parsed.positionals[0];
+      if (subcommand === "status") {
+        const result = await migrationStatus({ cwd });
+        render(asJson ? result : `schema ${result.currentVersion}/${result.latestVersion}`, asJson);
+        return;
+      }
+      if (subcommand === "up") {
+        const result = await migrateUp({ cwd });
+        render(asJson ? result : `schema ${result.currentVersion}/${result.latestVersion}`, asJson);
+        return;
+      }
+      throw new Error("Unknown migrate command. Run `agentmem help` for usage.");
+    }
+    case "backup": {
+      const result = await backupStore({
+        cwd,
+        outputDir: optionalString(parsed, "output")
+      });
+      render(asJson ? result : `Backup written to ${result.backupPath}.`, asJson);
+      return;
+    }
+    case "restore": {
+      const backupPath = parsed.positionals[0];
+      if (!backupPath) {
+        throw new Error("restore requires a backup path");
+      }
+      const result = await restoreStore({ cwd, backupPath });
+      render(asJson ? result : `Restored backup. Safety backup written to ${result.backupPath}.`, asJson);
+      return;
+    }
+    case "repair": {
+      const result = await repairStore({ cwd });
+      render(asJson ? result : JSON.stringify({ repaired: result.repaired, issues: result.issues }, null, 2), asJson);
+      return;
+    }
     case "eval": {
+      if (parsed.positionals[0] === "live") {
+        const result = await runLiveAgentEval({
+          cwd,
+          writeReport: Boolean(parsed.options["write-report"])
+        });
+        render(
+          asJson
+            ? result
+            : [
+                `${result.name}: ${result.passed ? "pass" : "fail"}`,
+                ...result.scenarios.map((item) => `- ${item.passed ? "pass" : "fail"}: ${item.name}`)
+              ].join("\n"),
+          asJson
+        );
+        if (!result.passed) {
+          process.exitCode = 1;
+        }
+        return;
+      }
       const result = await runV1Evals();
       render(
         asJson
@@ -732,7 +1124,7 @@ async function main(): Promise<void> {
       return;
     }
     case "scan": {
-      const result = await scanForSecrets({ cwd });
+      const result = await scanForSecrets({ cwd, deep: Boolean(parsed.options.deep) });
       if (asJson) {
         render(result, true);
       } else {

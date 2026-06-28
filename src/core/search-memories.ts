@@ -2,6 +2,7 @@ import { CONFIDENCE_SCORES, SEVERITY_SCORES, TYPE_PRIORITIES } from "../domain/d
 import type { MemoryRecord, SearchMemoryInput } from "../domain/types.js";
 
 import { loadProject } from "./context.js";
+import { excludeRelationSupersededMemories, isAgentVisibleMemory } from "./memory-eligibility.js";
 
 function tokenize(value: string): string[] {
   return Array.from(
@@ -73,7 +74,10 @@ export async function searchMemories(input: SearchMemoryInput): Promise<MemoryRe
   const loaded = await loadProject(input.cwd);
 
   try {
-    const memories = loaded.repo.listMemories(loaded.project.projectId);
+    const all = loaded.repo.listMemories(loaded.project.projectId);
+    const memories = excludeRelationSupersededMemories(
+      all.filter((memory) => isAgentVisibleMemory({ memory, config: loaded.context.config }))
+    );
 
     return memories
       .filter((memory) => {
