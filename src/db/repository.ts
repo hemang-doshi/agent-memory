@@ -122,15 +122,24 @@ export class AgentMemoryRepository {
       return null;
     }
 
-    return {
-      projectId: String(row.project_id),
-      name: String(row.name),
-      gitRoot: String(row.git_root),
-      gitRemoteHash: row.git_remote_hash ? String(row.git_remote_hash) : null,
-      createdAt: String(row.created_at),
-      updatedAt: String(row.updated_at),
-      configPath: String(row.config_path)
-    };
+    return this.mapProject(row);
+  }
+
+  getProjectById(projectId: string): ProjectRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM projects WHERE project_id = ? LIMIT 1")
+      .get(projectId) as Record<string, unknown> | undefined;
+
+    return row ? this.mapProject(row) : null;
+  }
+
+  updateProjectRoot(projectId: string, gitRoot: string, gitRemoteHash: string | null, configPath: string): void {
+    this.db
+      .prepare(
+        `UPDATE projects SET git_root = ?, git_remote_hash = ?, config_path = ?, updated_at = ?
+         WHERE project_id = ?`
+      )
+      .run(gitRoot, gitRemoteHash, configPath, new Date().toISOString(), projectId);
   }
 
   insertMemory(memory: MemoryRecord): void {
@@ -767,6 +776,18 @@ export class AgentMemoryRepository {
         fields.paths,
         fields.metadata
       );
+  }
+
+  private mapProject(row: Record<string, unknown>): ProjectRecord {
+    return {
+      projectId: String(row.project_id),
+      name: String(row.name),
+      gitRoot: String(row.git_root),
+      gitRemoteHash: row.git_remote_hash ? String(row.git_remote_hash) : null,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+      configPath: String(row.config_path)
+    };
   }
 
   private mapMemory(row: Record<string, unknown>): MemoryRecord {

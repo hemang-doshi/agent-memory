@@ -8,6 +8,7 @@ import {
 } from "../config/project-context.js";
 import type { ProjectContext } from "../config/project-context.js";
 import type { ProjectRecord } from "../domain/types.js";
+import { writeFileSync } from "node:fs";
 
 export interface LoadedProject {
   context: ProjectContext;
@@ -20,9 +21,27 @@ async function openProject(context: ProjectContext): Promise<LoadedProject> {
   const db = openDatabase(context.storePath);
   try {
     const repo = new AgentMemoryRepository(db);
-    let project = repo.getProjectByRoot(context.gitRoot);
+
+    let project = context.config.project_id
+      ? repo.getProjectById(context.config.project_id) ?? null
+      : null;
 
     if (!project) {
+      project = repo.getProjectByRoot(context.gitRoot);
+    }
+
+    if (project) {
+      if (project.gitRoot !== context.gitRoot || project.configPath !== context.configPath) {
+        project.gitRoot = context.gitRoot;
+        project.configPath = context.configPath;
+        repo.updateProjectRoot(project.projectId, context.gitRoot, project.gitRemoteHash, context.configPath);
+      }
+
+      if (!context.config.project_id) {
+        context.config.project_id = project.projectId;
+        writeFileSync(context.configPath, JSON.stringify(context.config, null, 2));
+      }
+    } else {
       project = await buildProjectRecord(context);
       repo.upsertProject(project);
     }

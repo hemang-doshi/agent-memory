@@ -37,6 +37,15 @@ export async function approveCandidate({
     assertNoObviousSecret(existing.evidence);
 
     const now = new Date().toISOString();
+    const candidatePaths: string[] =
+      Array.isArray(existing.metadata.paths)
+        ? existing.metadata.paths.filter((p): p is string => typeof p === "string")
+        : [];
+    const candidateTags: string[] =
+      Array.isArray(existing.metadata.tags)
+        ? existing.metadata.tags.filter((t): t is string => typeof t === "string")
+        : [];
+
     const memory: MemoryRecord = {
       id: shortId("mem"),
       projectId: loaded.project.projectId,
@@ -47,8 +56,8 @@ export async function approveCandidate({
       status: "active",
       confidence: existing.confidence,
       source: "agent_reported",
-      paths: [],
-      tags: [],
+      paths: candidatePaths,
+      tags: candidateTags,
       severity: existing.severity,
       createdAt: now,
       updatedAt: now,
