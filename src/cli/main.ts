@@ -187,7 +187,7 @@ function helpText(): string {
     "  agentmem manage --plan [--json]",
     "  agentmem benchmark run --fixture <path> [--json]",
     "  agentmem benchmark run --all [--json]",
-    "  agentmem search <query> [--type <type>] [--json]",
+    "  agentmem search <query> [--type <type>] [--all] [--json]",
     "  agentmem list [--type <type>] [--all] [--json]",
     "  agentmem update <memory-id> --reason <reason> [--content \"...\"] [--type <type>] [--status <status>] [--tags a,b] [--paths a,b] [--pinned true|false] [--priority n]",
     "  agentmem forget <memory-id> --reason <reason>",

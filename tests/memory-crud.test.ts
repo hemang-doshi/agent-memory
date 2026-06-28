@@ -80,7 +80,7 @@ describe("memory CRUD", () => {
     expect(pathResults[0]?.id).toBe(decision.id);
   });
 
-  test("search excludes inactive memories by default", async () => {
+  test("search excludes inactive and stale memories by default", async () => {
     const cwd = await createTempWorkspace("agentmem-search-inactive");
     workspaces.push(cwd);
     await initProject({ cwd });
@@ -94,7 +94,7 @@ describe("memory CRUD", () => {
     });
 
     expect(await searchMemories({ cwd, query: "legacy renderer", activeOnly: true })).toEqual([]);
-    expect(await searchMemories({ cwd, query: "legacy renderer", activeOnly: false })).toHaveLength(1);
+    expect(await searchMemories({ cwd, query: "legacy renderer", activeOnly: false })).toEqual([]);
   });
 
   test("marks memories stale and keeps explainability context", async () => {

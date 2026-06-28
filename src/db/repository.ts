@@ -31,13 +31,31 @@ function stringifyJson(value: unknown): string {
 export class AgentMemoryRepository {
   constructor(private readonly db: DatabaseSync) {}
 
+  private transactionDepth = 0;
+
   private transaction(work: () => void): void {
-    this.db.exec("BEGIN");
+    if (this.transactionDepth === 0) {
+      this.db.exec("BEGIN");
+    } else {
+      this.db.exec(`SAVEPOINT sp_${this.transactionDepth}`);
+    }
+    this.transactionDepth += 1;
+
     try {
       work();
-      this.db.exec("COMMIT");
+      this.transactionDepth -= 1;
+      if (this.transactionDepth === 0) {
+        this.db.exec("COMMIT");
+      } else {
+        this.db.exec(`RELEASE sp_${this.transactionDepth}`);
+      }
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.transactionDepth -= 1;
+      if (this.transactionDepth === 0) {
+        this.db.exec("ROLLBACK");
+      } else {
+        this.db.exec(`ROLLBACK TO sp_${this.transactionDepth}`);
+      }
       throw error;
     }
   }
@@ -87,47 +105,49 @@ export class AgentMemoryRepository {
   }
 
   insertMemory(memory: MemoryRecord): void {
-    this.db
-      .prepare(
-        `INSERT INTO memories (
-          id, project_id, scope, type, content, summary, status, confidence, source,
-          paths_json, tags_json, severity, created_at, updated_at, last_used_at,
-          pinned, priority, use_count, last_retrieved_at, last_injected_at,
-          expires_at, related_memory_ids_json, supersedes_memory_id, conflict_group,
-          safety_flags_json, redaction_status, metadata_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        memory.id,
-        memory.projectId,
-        memory.scope,
-        memory.type,
-        memory.content,
-        memory.summary,
-        memory.status,
-        memory.confidence,
-        memory.source,
-        stringifyJson(memory.paths),
-        stringifyJson(memory.tags),
-        memory.severity,
-        memory.createdAt,
-        memory.updatedAt,
-        memory.lastUsedAt,
-        memory.pinned ? 1 : 0,
-        memory.priority,
-        memory.useCount,
-        memory.lastRetrievedAt,
-        memory.lastInjectedAt,
-        memory.expiresAt,
-        stringifyJson(memory.relatedMemoryIds),
-        memory.supersedesMemoryId,
-        memory.conflictGroup,
-        stringifyJson(memory.safetyFlags),
-        memory.redactionStatus,
-        stringifyJson(memory.metadata)
-      );
+    this.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO memories (
+            id, project_id, scope, type, content, summary, status, confidence, source,
+            paths_json, tags_json, severity, created_at, updated_at, last_used_at,
+            pinned, priority, use_count, last_retrieved_at, last_injected_at,
+            expires_at, related_memory_ids_json, supersedes_memory_id, conflict_group,
+            safety_flags_json, redaction_status, metadata_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          memory.id,
+          memory.projectId,
+          memory.scope,
+          memory.type,
+          memory.content,
+          memory.summary,
+          memory.status,
+          memory.confidence,
+          memory.source,
+          stringifyJson(memory.paths),
+          stringifyJson(memory.tags),
+          memory.severity,
+          memory.createdAt,
+          memory.updatedAt,
+          memory.lastUsedAt,
+          memory.pinned ? 1 : 0,
+          memory.priority,
+          memory.useCount,
+          memory.lastRetrievedAt,
+          memory.lastInjectedAt,
+          memory.expiresAt,
+          stringifyJson(memory.relatedMemoryIds),
+          memory.supersedesMemoryId,
+          memory.conflictGroup,
+          stringifyJson(memory.safetyFlags),
+          memory.redactionStatus,
+          stringifyJson(memory.metadata)
+        );
 
-    this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
+      this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
+    });
   }
 
   createMemoryWithEvent(
@@ -141,66 +161,68 @@ export class AgentMemoryRepository {
   }
 
   updateMemory(memory: MemoryRecord): void {
-    this.db
-      .prepare(
-        `UPDATE memories SET
-          scope = ?,
-          type = ?,
-          content = ?,
-          summary = ?,
-          status = ?,
-          confidence = ?,
-          source = ?,
-          paths_json = ?,
-          tags_json = ?,
-          severity = ?,
-          created_at = ?,
-          updated_at = ?,
-          last_used_at = ?,
-          pinned = ?,
-          priority = ?,
-          use_count = ?,
-          last_retrieved_at = ?,
-          last_injected_at = ?,
-          expires_at = ?,
-          related_memory_ids_json = ?,
-          supersedes_memory_id = ?,
-          conflict_group = ?,
-          safety_flags_json = ?,
-          redaction_status = ?,
-          metadata_json = ?
-        WHERE id = ?`
-      )
-      .run(
-        memory.scope,
-        memory.type,
-        memory.content,
-        memory.summary,
-        memory.status,
-        memory.confidence,
-        memory.source,
-        stringifyJson(memory.paths),
-        stringifyJson(memory.tags),
-        memory.severity,
-        memory.createdAt,
-        memory.updatedAt,
-        memory.lastUsedAt,
-        memory.pinned ? 1 : 0,
-        memory.priority,
-        memory.useCount,
-        memory.lastRetrievedAt,
-        memory.lastInjectedAt,
-        memory.expiresAt,
-        stringifyJson(memory.relatedMemoryIds),
-        memory.supersedesMemoryId,
-        memory.conflictGroup,
-        stringifyJson(memory.safetyFlags),
-        memory.redactionStatus,
-        stringifyJson(memory.metadata),
-        memory.id
-      );
+    this.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE memories SET
+            scope = ?,
+            type = ?,
+            content = ?,
+            summary = ?,
+            status = ?,
+            confidence = ?,
+            source = ?,
+            paths_json = ?,
+            tags_json = ?,
+            severity = ?,
+            created_at = ?,
+            updated_at = ?,
+            last_used_at = ?,
+            pinned = ?,
+            priority = ?,
+            use_count = ?,
+            last_retrieved_at = ?,
+            last_injected_at = ?,
+            expires_at = ?,
+            related_memory_ids_json = ?,
+            supersedes_memory_id = ?,
+            conflict_group = ?,
+            safety_flags_json = ?,
+            redaction_status = ?,
+            metadata_json = ?
+          WHERE id = ?`
+        )
+        .run(
+          memory.scope,
+          memory.type,
+          memory.content,
+          memory.summary,
+          memory.status,
+          memory.confidence,
+          memory.source,
+          stringifyJson(memory.paths),
+          stringifyJson(memory.tags),
+          memory.severity,
+          memory.createdAt,
+          memory.updatedAt,
+          memory.lastUsedAt,
+          memory.pinned ? 1 : 0,
+          memory.priority,
+          memory.useCount,
+          memory.lastRetrievedAt,
+          memory.lastInjectedAt,
+          memory.expiresAt,
+          stringifyJson(memory.relatedMemoryIds),
+          memory.supersedesMemoryId,
+          memory.conflictGroup,
+          stringifyJson(memory.safetyFlags),
+          memory.redactionStatus,
+          stringifyJson(memory.metadata),
+          memory.id
+        );
 
-    this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
+      this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
+    });
   }
 
   updateMemoryWithEvent(

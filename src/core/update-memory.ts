@@ -59,9 +59,15 @@ export async function updateMemory({
       memory.status = status;
     }
     if (tags !== undefined) {
+      for (const tag of tags) {
+        assertNoObviousSecret(tag);
+      }
       memory.tags = tags;
     }
     if (paths !== undefined) {
+      for (const path of paths) {
+        assertNoObviousSecret(path);
+      }
       memory.paths = paths;
     }
     if (pinned !== undefined) {

@@ -30,6 +30,7 @@ function runMigrations(db: DatabaseSync): void {
 
 export function openDatabase(filename: string): DatabaseSync {
   const db = new DatabaseSync(filename);
+  db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA_SQL);
   runMigrations(db);
   db.prepare("INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)").run(

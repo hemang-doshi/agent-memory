@@ -83,7 +83,6 @@ export async function recordEvent({
   cwd: string;
   type: string;
   summary: string;
-  actor?: EventRecord["actor"];
   sessionId?: string;
 }): Promise<EventRecord> {
   if (!sessionId) {

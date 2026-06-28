@@ -1,6 +1,7 @@
 import type { ProtocolStartResult } from "../domain/types.js";
 
 import { generatePack } from "./generate-pack.js";
+import { finishSession } from "./session-finish.js";
 import { startSession } from "./session-start.js";
 
 export const PROTOCOL_START_NEXT_STEPS = [
@@ -24,19 +25,32 @@ export async function startProtocol({
   }
 
   const session = await startSession({ cwd, task: normalizedTask });
-  const pack = await generatePack({
-    cwd,
-    task: normalizedTask,
-    sessionId: session.sessionId
-  });
+  try {
+    const pack = await generatePack({
+      cwd,
+      task: normalizedTask,
+      sessionId: session.sessionId
+    });
 
-  return {
-    sessionId: session.sessionId,
-    task: normalizedTask,
-    pack: {
-      markdown: pack.markdown,
-      matchedMemoryIds: pack.matchedMemoryIds
-    },
-    nextSteps: PROTOCOL_START_NEXT_STEPS
-  };
+    return {
+      sessionId: session.sessionId,
+      task: normalizedTask,
+      pack: {
+        markdown: pack.markdown,
+        matchedMemoryIds: pack.matchedMemoryIds
+      },
+      nextSteps: PROTOCOL_START_NEXT_STEPS
+    };
+  } catch (error) {
+    try {
+      await finishSession({
+        cwd,
+        sessionId: session.sessionId,
+        summary: `Protocol start failed: ${error instanceof Error ? error.message : String(error)}`
+      });
+    } catch {
+      // best-effort cleanup — don't mask original error
+    }
+    throw error;
+  }
 }
