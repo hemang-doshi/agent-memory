@@ -5,8 +5,11 @@ import { DatabaseSync } from "node:sqlite";
 import { createMemory } from "../src/core/create-memory.js";
 import { generatePack } from "../src/core/generate-pack.js";
 import { initProject } from "../src/core/init-project.js";
+import { getKeywordIndexHealth, rebuildKeywordIndex } from "../src/core/keyword-index.js";
+import { loadProject } from "../src/core/context.js";
 import { preflightCommand } from "../src/core/preflight-command.js";
 import { retrieveMemories } from "../src/core/retrieve-memories.js";
+import { updateMemory } from "../src/core/update-memory.js";
 import { MEMORY_TYPES } from "../src/domain/types.js";
 import { cleanupWorkspace, createTempWorkspace } from "./helpers.js";
 
@@ -17,6 +20,125 @@ afterEach(async () => {
 });
 
 describe("retrieval and preflight", () => {
+  test("rebuilds and searches the keyword index from stored memory fields", async () => {
+    const cwd = await createTempWorkspace("agentmem-keyword-index");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const lexical = await createMemory({
+      cwd,
+      content: "Use durable queue workers for invoice reconciliation.",
+      summary: "Sidecar worker handles replay-safe invoice jobs.",
+      type: "architecture_note",
+      source: "cli",
+      tags: ["shoreline"],
+      paths: ["src/billing/reconciler.ts"],
+      metadata: { indexProbe: "zephyrmarker" }
+    });
+    await createMemory({
+      cwd,
+      content: "Prefer pnpm for package manager operations.",
+      type: "workflow_rule",
+      source: "user_explicit",
+      tags: ["package-manager"],
+      paths: ["package.json"],
+      metadata: { indexProbe: "differentmarker" }
+    });
+
+    await rebuildKeywordIndex({ cwd });
+
+    await expect(getKeywordIndexHealth({ cwd })).resolves.toEqual({
+      indexedMemories: 2,
+      eligibleMemories: 2,
+      stale: false
+    });
+
+    const loaded = await loadProject(cwd);
+    try {
+      expect(
+        loaded.repo.searchKeywordIndex(loaded.project.projectId, "durable", 5)[0]?.memoryId
+      ).toBe(lexical.id);
+      expect(
+        loaded.repo.searchKeywordIndex(loaded.project.projectId, "sidecar", 5)[0]?.memoryId
+      ).toBe(lexical.id);
+      expect(
+        loaded.repo.searchKeywordIndex(loaded.project.projectId, "shoreline", 5)[0]?.memoryId
+      ).toBe(lexical.id);
+      expect(
+        loaded.repo.searchKeywordIndex(loaded.project.projectId, "reconciler", 5)[0]?.memoryId
+      ).toBe(lexical.id);
+      expect(
+        loaded.repo.searchKeywordIndex(loaded.project.projectId, "zephyrmarker", 5)[0]?.memoryId
+      ).toBe(lexical.id);
+    } finally {
+      loaded.close();
+    }
+  });
+
+  test("keeps the keyword index fresh when memories are created or updated", async () => {
+    const cwd = await createTempWorkspace("agentmem-keyword-index-fresh");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const memory = await createMemory({
+      cwd,
+      content: "Initial checkout workflow uses a temporary marker.",
+      type: "workflow_rule",
+      source: "cli",
+      metadata: { indexProbe: "beforemarker" }
+    });
+
+    const loadedAfterCreate = await loadProject(cwd);
+    try {
+      expect(
+        loadedAfterCreate.repo.searchKeywordIndex(
+          loadedAfterCreate.project.projectId,
+          "beforemarker",
+          5
+        )[0]?.memoryId
+      ).toBe(memory.id);
+      expect(loadedAfterCreate.repo.getKeywordIndexHealth(loadedAfterCreate.project.projectId)).toEqual({
+        indexedMemories: 1,
+        eligibleMemories: 1,
+        stale: false
+      });
+    } finally {
+      loadedAfterCreate.close();
+    }
+
+    await updateMemory({
+      cwd,
+      memoryId: memory.id,
+      reason: "Change indexed content marker.",
+      content: "Updated checkout workflow uses aftermarker for validation."
+    });
+
+    const loadedAfterUpdate = await loadProject(cwd);
+    try {
+      expect(
+        loadedAfterUpdate.repo.searchKeywordIndex(
+          loadedAfterUpdate.project.projectId,
+          "aftermarker",
+          5
+        )[0]?.memoryId
+      ).toBe(memory.id);
+      expect(
+        loadedAfterUpdate.repo.searchKeywordIndex(
+          loadedAfterUpdate.project.projectId,
+          "Initial",
+          5
+        )
+      ).toEqual([]);
+      expect(loadedAfterUpdate.repo.getKeywordIndexHealth(loadedAfterUpdate.project.projectId)).toEqual({
+        indexedMemories: 1,
+        eligibleMemories: 1,
+        stale: false
+      });
+    } finally {
+      loadedAfterUpdate.close();
+    }
+  });
+
   test("builds a compact memory pack with prioritized sections", async () => {
     const cwd = await createTempWorkspace("agentmem-pack");
     workspaces.push(cwd);
@@ -371,6 +493,83 @@ describe("retrieval and preflight", () => {
     expect(pathMatches.map((memory) => memory.content)).toContain(
       "src/core/context.ts has fragile initialization behavior."
     );
+  });
+
+  test("retrieval modes support keyword and hybrid without changing deterministic default", async () => {
+    const cwd = await createTempWorkspace("agentmem-retrieval-modes");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const deterministic = await createMemory({
+      cwd,
+      content: "Use pnpm for package installation.",
+      type: "workflow_rule",
+      source: "user_explicit",
+      tags: ["package-manager"]
+    });
+    const keywordOnly = await createMemory({
+      cwd,
+      content: "Store billing retry notes near the reconciler.",
+      type: "architecture_note",
+      source: "cli",
+      metadata: { retrievalProbe: "auroramarker" }
+    });
+
+    const defaultResults = await retrieveMemories({ cwd, task: "package-manager" });
+    expect(defaultResults.map((memory) => memory.id)).toContain(deterministic.id);
+    expect(defaultResults.map((memory) => memory.id)).not.toContain(keywordOnly.id);
+
+    const keywordResults = await retrieveMemories({
+      cwd,
+      task: "auroramarker",
+      mode: "keyword"
+    });
+    expect(keywordResults.map((memory) => memory.id)).toEqual([keywordOnly.id]);
+    expect(keywordResults[0]?.metadata.retrieval).toMatchObject({
+      mode: "keyword",
+      reason: expect.stringContaining("keyword match"),
+      signals: expect.objectContaining({ keywordMatch: true })
+    });
+
+    const hybridResults = await retrieveMemories({
+      cwd,
+      task: "package-manager auroramarker",
+      mode: "hybrid"
+    });
+    expect(new Set(hybridResults.map((memory) => memory.id)).size).toBe(hybridResults.length);
+    expect(hybridResults.map((memory) => memory.id)).toEqual(
+      expect.arrayContaining([deterministic.id, keywordOnly.id])
+    );
+    expect(hybridResults.map((memory) => memory.metadata.retrieval)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ mode: "hybrid" })
+      ])
+    );
+  });
+
+  test("vector retrieval uses the local vector index", async () => {
+    const cwd = await createTempWorkspace("agentmem-retrieval-vector");
+    workspaces.push(cwd);
+    await initProject({ cwd });
+
+    const memory = await createMemory({
+      cwd,
+      content: "Billing retry reconciliation uses idempotent queue workers.",
+      type: "architecture_note",
+      source: "user_explicit"
+    });
+
+    const results = await retrieveMemories({
+      cwd,
+      task: "billing retry queue",
+      mode: "vector",
+      maxResults: 1
+    });
+    expect(results.map((item) => item.id)).toEqual([memory.id]);
+    expect(results[0]?.metadata.retrieval).toMatchObject({
+      mode: "vector",
+      reason: expect.stringContaining("vector match")
+    });
   });
 
   test("retrieval includes pinned memories and records score/use metadata", async () => {

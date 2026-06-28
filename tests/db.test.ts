@@ -27,9 +27,12 @@ describe("database hygiene", () => {
     const indexes = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index'")
       .all() as { name: string }[];
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all() as { name: string }[];
     db.close();
 
-    expect(version?.value).toBe("3");
+    expect(version?.value).toBe("4");
     expect(indexes.map((index) => index.name)).toEqual(
       expect.arrayContaining([
         "idx_memories_project_created",
@@ -37,6 +40,7 @@ describe("database hygiene", () => {
         "idx_projects_git_root"
       ])
     );
+    expect(tables.map((table) => table.name)).toContain("memory_keyword_index");
   });
 
   test("migrates existing v1 memory tables with additive retrieval metadata", async () => {
@@ -88,11 +92,15 @@ describe("database hygiene", () => {
     const columns = migrated
       .prepare("PRAGMA table_info(memories)")
       .all() as { name: string }[];
+    const tables = migrated
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all() as { name: string }[];
     const repo = new AgentMemoryRepository(migrated);
     const memories = repo.listMemories("proj_old");
     migrated.close();
 
-    expect(version?.value).toBe("3");
+    expect(version?.value).toBe("4");
+    expect(tables.map((table) => table.name)).toContain("memory_keyword_index");
     expect(columns.map((column) => column.name)).toEqual(
       expect.arrayContaining([
         "pinned",

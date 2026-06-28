@@ -25,9 +25,18 @@ jobs:
       - name: CLI help smoke
         run: |
           pnpm cli --help
+          pnpm cli index --help
+          pnpm cli retrieve --help
+          pnpm cli mcp serve --help
+          pnpm cli adapters list --help
+          pnpm cli backup --help
+          pnpm cli migrate status --help
+          pnpm cli eval live --help
           node dist/cli/main.js --help
       - name: Built CLI eval
-        run: node dist/cli/main.js eval --json
+        run: |
+          node dist/cli/main.js eval --json
+          pnpm cli eval live --json
       - name: Protocol benchmarks
         run: pnpm cli benchmark run --all --json
       - name: Git whitespace check

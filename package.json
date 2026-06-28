@@ -42,6 +42,7 @@
   },
   "packageManager": "pnpm@11.3.0",
   "devDependencies": {
+    "@claude-flow/codex": "3.0.0-alpha.12",
     "@types/node": "^26.0.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",

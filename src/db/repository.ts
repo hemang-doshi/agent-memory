@@ -9,7 +9,8 @@ import type {
   ProjectRecord,
   ProtocolReceiptRecord,
   ReceiptType,
-  SessionRecord
+  SessionRecord,
+  TrustLevel
 } from "../domain/types.js";
 
 function parseJson<T>(value: unknown, fallback: T, field: string): T {
@@ -26,6 +27,34 @@ function parseJson<T>(value: unknown, fallback: T, field: string): T {
 
 function stringifyJson(value: unknown): string {
   return JSON.stringify(value ?? {});
+}
+
+function buildKeywordQuery(query: string): string {
+  return query
+    .toLowerCase()
+    .split(/[^a-z0-9_]+/)
+    .filter((token) => token.length > 0)
+    .join(" OR ");
+}
+
+function keywordIndexFields(memory: MemoryRecord): {
+  memoryId: string;
+  projectId: string;
+  content: string;
+  summary: string;
+  tags: string;
+  paths: string;
+  metadata: string;
+} {
+  return {
+    memoryId: memory.id,
+    projectId: memory.projectId ?? "",
+    content: memory.content,
+    summary: memory.summary ?? "",
+    tags: stringifyJson(memory.tags),
+    paths: stringifyJson(memory.paths),
+    metadata: stringifyJson(memory.metadata)
+  };
 }
 
 export class AgentMemoryRepository {
@@ -113,8 +142,8 @@ export class AgentMemoryRepository {
             paths_json, tags_json, severity, created_at, updated_at, last_used_at,
             pinned, priority, use_count, last_retrieved_at, last_injected_at,
             expires_at, related_memory_ids_json, supersedes_memory_id, conflict_group,
-            safety_flags_json, redaction_status, metadata_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            safety_flags_json, redaction_status, trust_level, metadata_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           memory.id,
@@ -143,10 +172,12 @@ export class AgentMemoryRepository {
           memory.conflictGroup,
           stringifyJson(memory.safetyFlags),
           memory.redactionStatus,
+          String(memory.metadata.trustLevel ?? memory.trustLevel ?? "reviewed"),
           stringifyJson(memory.metadata)
         );
 
       this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
+      this.upsertKeywordIndex(memory);
     });
   }
 
@@ -189,6 +220,7 @@ export class AgentMemoryRepository {
             conflict_group = ?,
             safety_flags_json = ?,
             redaction_status = ?,
+            trust_level = ?,
             metadata_json = ?
           WHERE id = ?`
         )
@@ -217,11 +249,13 @@ export class AgentMemoryRepository {
           memory.conflictGroup,
           stringifyJson(memory.safetyFlags),
           memory.redactionStatus,
+          String(memory.metadata.trustLevel ?? memory.trustLevel ?? "reviewed"),
           stringifyJson(memory.metadata),
           memory.id
         );
 
       this.syncMemoryLinks(memory.id, memory.relatedMemoryIds);
+      this.upsertKeywordIndex(memory);
     });
   }
 
@@ -241,6 +275,120 @@ export class AgentMemoryRepository {
       .all(projectId) as Record<string, unknown>[];
 
     return rows.map((row) => this.mapMemory(row));
+  }
+
+  rebuildKeywordIndex(projectId: string): void {
+    const rows = this.db
+      .prepare(
+        `SELECT
+          id,
+          project_id,
+          content,
+          summary,
+          tags_json,
+          paths_json,
+          metadata_json
+        FROM memories
+        WHERE project_id = ?
+        ORDER BY created_at ASC, id ASC`
+      )
+      .all(projectId) as Record<string, unknown>[];
+
+    const insert = this.db.prepare(
+      `INSERT INTO memory_keyword_index (
+        memory_id, project_id, content, summary, tags, paths, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM memory_keyword_index WHERE project_id = ?").run(projectId);
+
+      for (const row of rows) {
+        insert.run(
+          String(row.id),
+          String(row.project_id),
+          String(row.content),
+          row.summary ? String(row.summary) : "",
+          String(row.tags_json),
+          String(row.paths_json),
+          String(row.metadata_json)
+        );
+      }
+    });
+  }
+
+  searchKeywordIndex(
+    projectId: string,
+    query: string,
+    limit: number
+  ): Array<{ memoryId: string; rank: number }> {
+    const normalizedLimit = Math.max(0, Math.floor(limit));
+    const keywordQuery = buildKeywordQuery(query);
+    if (normalizedLimit === 0 || keywordQuery.length === 0) {
+      return [];
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT memory_id, bm25(memory_keyword_index) AS rank
+        FROM memory_keyword_index
+        WHERE project_id = ?
+          AND memory_keyword_index MATCH ?
+        ORDER BY rank ASC, memory_id ASC
+        LIMIT ?`
+      )
+      .all(projectId, keywordQuery, normalizedLimit) as Record<string, unknown>[];
+
+    return rows.map((row) => ({
+      memoryId: String(row.memory_id),
+      rank: Number(row.rank)
+    }));
+  }
+
+  getKeywordIndexHealth(projectId: string): {
+    indexedMemories: number;
+    eligibleMemories: number;
+    stale: boolean;
+  } {
+    const eligibleRow = this.db
+      .prepare("SELECT COUNT(*) AS count FROM memories WHERE project_id = ?")
+      .get(projectId) as { count: number };
+    const indexedRow = this.db
+      .prepare("SELECT COUNT(*) AS count FROM memory_keyword_index WHERE project_id = ?")
+      .get(projectId) as { count: number };
+    const staleRow = this.db
+      .prepare(
+        `SELECT 1 AS stale
+        FROM memories AS m
+        LEFT JOIN memory_keyword_index AS i
+          ON i.memory_id = m.id
+          AND i.project_id = m.project_id
+        WHERE m.project_id = ?
+          AND (
+            i.memory_id IS NULL
+            OR i.content IS NOT m.content
+            OR i.summary IS NOT COALESCE(m.summary, '')
+            OR i.tags IS NOT m.tags_json
+            OR i.paths IS NOT m.paths_json
+            OR i.metadata IS NOT m.metadata_json
+          )
+        UNION ALL
+        SELECT 1 AS stale
+        FROM memory_keyword_index AS i
+        LEFT JOIN memories AS m
+          ON m.id = i.memory_id
+          AND m.project_id = i.project_id
+        WHERE i.project_id = ?
+          AND m.id IS NULL
+        LIMIT 1`
+      )
+      .get(projectId, projectId) as { stale: number } | undefined;
+
+    return {
+      indexedMemories: Number(indexedRow.count),
+      eligibleMemories: Number(eligibleRow.count),
+      stale: staleRow !== undefined
+    };
   }
 
   getMemory(memoryId: string): MemoryRecord | null {
@@ -601,6 +749,26 @@ export class AgentMemoryRepository {
     }
   }
 
+  private upsertKeywordIndex(memory: MemoryRecord): void {
+    const fields = keywordIndexFields(memory);
+    this.db.prepare("DELETE FROM memory_keyword_index WHERE memory_id = ?").run(memory.id);
+    this.db
+      .prepare(
+        `INSERT INTO memory_keyword_index (
+          memory_id, project_id, content, summary, tags, paths, metadata
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        fields.memoryId,
+        fields.projectId,
+        fields.content,
+        fields.summary,
+        fields.tags,
+        fields.paths,
+        fields.metadata
+      );
+  }
+
   private mapMemory(row: Record<string, unknown>): MemoryRecord {
     return {
       id: String(row.id),
@@ -633,7 +801,14 @@ export class AgentMemoryRepository {
       conflictGroup: row.conflict_group ? String(row.conflict_group) : null,
       safetyFlags: parseJson(row.safety_flags_json, [], "memories.safety_flags_json"),
       redactionStatus: String(row.redaction_status ?? "none") as MemoryRecord["redactionStatus"],
-      metadata: parseJson(row.metadata_json, {}, "memories.metadata_json")
+      trustLevel: (row.trust_level as TrustLevel) ?? "reviewed",
+      metadata: (() => {
+        const meta = parseJson(row.metadata_json, {}, "memories.metadata_json") as JsonRecord;
+        if (typeof row.trust_level === "string" && !meta.trustLevel) {
+          meta.trustLevel = row.trust_level;
+        }
+        return meta;
+      })()
     };
   }
 

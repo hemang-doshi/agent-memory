@@ -19,6 +19,7 @@ export const MEMORY_STATUSES = [
   "active",
   "unverified",
   "stale",
+  "quarantined",
   "superseded",
   "rejected",
   "archived"
@@ -92,6 +93,9 @@ export type EvidenceEventType = (typeof EVIDENCE_EVENT_TYPES)[number];
 export type ReceiptType = (typeof RECEIPT_TYPES)[number];
 export type CandidateType = (typeof CANDIDATE_TYPES)[number];
 export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
+export type RetrievalMode = "deterministic" | "keyword" | "hybrid" | "vector";
+export type RerankerMode = "none" | "noop" | "mock";
+export type TrustLevel = "trusted" | "reviewed" | "low" | "untrusted";
 
 export type JsonRecord = Record<string, unknown>;
 
@@ -107,6 +111,19 @@ export interface ProjectConfig {
     include_unverified: boolean;
     include_stale: boolean;
     max_results: number;
+  };
+  vector: {
+    enabled: boolean;
+    provider: "local" | "mock" | "external";
+  };
+  rerank: {
+    enabled: boolean;
+    provider: RerankerMode;
+    timeout_ms: number;
+  };
+  mcp: {
+    write_tools_enabled: boolean;
+    candidate_approval_enabled: boolean;
   };
 }
 
@@ -147,6 +164,7 @@ export interface MemoryRecord {
   conflictGroup: string | null;
   safetyFlags: string[];
   redactionStatus: "none" | "redacted" | "blocked";
+  trustLevel: TrustLevel;
   metadata: JsonRecord;
 }
 
@@ -302,6 +320,7 @@ export interface CreateMemoryInput {
   conflictGroup?: string | null;
   safetyFlags?: string[];
   redactionStatus?: MemoryRecord["redactionStatus"];
+  trustLevel?: TrustLevel;
   metadata?: JsonRecord;
   status?: MemoryStatus;
 }
@@ -321,6 +340,10 @@ export interface RetrieveMemoriesInput {
   files?: string[];
   command?: string;
   maxResults?: number;
+  mode?: RetrievalMode;
+  explain?: boolean;
+  rerank?: boolean;
+  reranker?: RerankerMode;
 }
 
 export interface PreflightResult {

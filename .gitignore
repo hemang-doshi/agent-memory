@@ -4,3 +4,24 @@ dist/
 .DS_Store
 coverage/
 *.log
+
+# Codex local configuration
+.codex/
+
+# Claude Flow runtime data
+.claude-flow/data/
+.claude-flow/logs/
+
+# Claude Code local config
+CLAUDE.local.md
+
+.claude-flow
+.codex
+.agents
+.commandcode
+.claude
+.mcp.json
+agentdb.*
+claude.md*
+.swarm
+ruvector.db

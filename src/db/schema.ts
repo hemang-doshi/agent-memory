@@ -36,7 +36,18 @@ CREATE TABLE IF NOT EXISTS memories (
   conflict_group TEXT,
   safety_flags_json TEXT NOT NULL DEFAULT '[]',
   redaction_status TEXT NOT NULL DEFAULT 'none',
+  trust_level TEXT NOT NULL DEFAULT 'reviewed',
   metadata_json TEXT NOT NULL
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_keyword_index USING fts5(
+  memory_id UNINDEXED,
+  project_id UNINDEXED,
+  content,
+  summary,
+  tags,
+  paths,
+  metadata
 );
 
 CREATE TABLE IF NOT EXISTS events (

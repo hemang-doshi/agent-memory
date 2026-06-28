@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "agent-memory.live-agent-scenarios.v1",
+  "description": "Deterministic local scenarios for no-memory vs memory-enabled behavior. These fixtures do not claim universal external agent behavior.",
+  "scenarios": [
+    "avoid-npm-install-in-pnpm-repo",
+    "avoid-fragile-file",
+    "avoid-known-failed-approach",
+    "respect-architecture-decision",
+    "respect-command-preflight",
+    "propose-reusable-learning",
+    "ignore-stale-superseded-memory",
+    "avoid-secret-bearing-memory"
+  ]
+}
