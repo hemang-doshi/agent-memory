@@ -1,432 +1,466 @@
+<p align="center">
+  <img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js >=22">
+  <img src="https://img.shields.io/badge/pnpm-11.3-F69220?style=flat-square&logo=pnpm&logoColor=white" alt="pnpm 11.3">
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License">
+  <img src="https://img.shields.io/badge/status-production--grade-6f42c1?style=flat-square" alt="Production Grade">
+</p>
+
 # Agent Memory
 
-Local-first project memory and protocol receipts for coding agents.
+> Local-first project memory system for coding agents. Captures durable knowledge, retrieves relevant context, prevents repeated mistakes, and produces auditable protocol receipts — all from a local SQLite store.
 
-Agent Memory stores reviewed project rules, decisions, command policies, failed attempts, fixes, and other reusable lessons in a local SQLite database under `.agent-memory/`. Agents can retrieve that context before planning, inject a compact memory packet, preflight risky commands, propose untrusted memory candidates, and produce receipts that show what happened.
+Agent Memory is a CLI-first tool. It stores reviewed project rules, decisions, command policies, failed attempts, fixes, and reusable lessons under `.agent-memory/`. Agents retrieve that context before planning, preflight risky commands, propose untrusted memory candidates, and produce session receipts that show exactly what happened.
 
-The project is CLI-first. It does not require a hosted service, cloud sync, external embeddings, or a dashboard. V2 includes local keyword/vector indexes, optional local reranking, a read-only-by-default MCP surface, agent adapters, lifecycle tools, ingestion/import/export, backup/restore/repair, and a reproducible local live-agent proof harness.
+No hosted service. No cloud sync. No external embedding calls by default. Full MCP surface, agent adapters, lifecycle management, import/export, backup/restore/repair, and a reproducible live-agent proof harness.
 
-## What It Does
+---
 
-- Creates local project state with `agentmem init`.
-- Stores typed, project-scoped memories with `add`, `decision`, `failed`, and `policy`.
-- Retrieves relevant memory with deterministic local scoring.
-- Builds markdown and structured JSON memory packets with `inject` or `pack`.
-- Checks command policies before commands with `preflight`.
-- Records sessions, protocol receipts, and evidence events.
-- Lets agents propose memory candidates that must be reviewed before becoming trusted memory.
-- Archives memory non-destructively with `forget`.
-- Rebuilds local keyword/vector indexes with `index`.
-- Explains retrieval decisions with `retrieve --explain` and `explain-retrieval`.
-- Scans, audits, and quarantines unsafe memory.
-- Installs adapter-specific instructions for Codex, Claude Code, Cursor, Command Code, OpenCode, and generic agents.
-- Exposes a read-only-by-default MCP manifest/request surface.
+## Table of Contents
 
-Agent-generated learning is not automatically trusted. Durable memory should come from explicit user action or reviewed candidates.
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [CLI Commands](#cli-commands)
+- [Protocol Spine](#protocol-spine)
+- [Retrieval Engine](#retrieval-engine)
+- [Safety Model](#safety-model)
+- [MCP Server](#mcp-server)
+- [Agent Adapters](#agent-adapters)
+- [Memory Lifecycle](#memory-lifecycle)
+- [Import / Export](#import--export)
+- [Backup / Restore / Migrations](#backup--restore--migrations)
+- [Evaluations & Benchmarks](#evaluations--benchmarks)
+- [Repository Layout](#repository-layout)
+- [Development](#development)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
-## Requirements
+---
 
-- Node.js 22 or newer.
-- pnpm.
+## Installation
 
-This repository currently uses `node:sqlite`, so older Node.js versions are not supported.
+```bash
+# From source
+git clone https://github.com/hemang-doshi/agent-memory.git
+cd agent-memory
+pnpm install --frozen-lockfile
+pnpm build
+pnpm cli --help
+
+# Or via npm (when published)
+npm install -g agent-memory-preflight
+agentmem --help
+```
+
+**Requirements**: Node.js ≥22, pnpm 11.x.
+
+---
 
 ## Quick Start
 
-From this repository:
-
 ```bash
-pnpm install --frozen-lockfile
-pnpm build
-pnpm cli init
-pnpm cli install-instructions
-pnpm cli add "Use pnpm for package operations." --type workflow_rule --tag package-manager
-pnpm cli retrieve "update package operations workflow" --file package.json --json
-pnpm cli retrieve "update package operations workflow" --mode hybrid --explain --json
-pnpm cli inject "update package operations workflow" --format markdown
-pnpm cli preflight --command "pnpm test" --json
-```
-
-After package installation, the binary name is `agentmem`:
-
-```bash
+# Initialize a project
 agentmem init
+
+# Install the agent router into AGENTS.md
 agentmem install-instructions
+
+# Store a memory
 agentmem add "Use pnpm for package operations." --type workflow_rule --tag package-manager
-agentmem inject "update package operations workflow" --format markdown
+
+# Retrieve relevant memories
+agentmem retrieve "update package operations" --file package.json --json
+
+# Retrieve with hybrid mode + explanation
+agentmem retrieve "update package operations" --mode hybrid --explain --json
+
+# Generate a memory pack (markdown)
+agentmem inject "update package operations" --format markdown
+
+# Check a command before running it
+agentmem preflight --command "pnpm test" --json
 ```
 
-## Package Name
+---
 
-The published package is currently `agent-memory-preflight`; the installed CLI binary is `agentmem`.
+## CLI Commands
 
-For a concrete demo, see [examples/avoid-repeated-mistake](https://github.com/hemang-doshi/agent-memory/tree/main/examples/avoid-repeated-mistake).
+### Core Operations
+
+```text
+agentmem init [--git-init] [--json]                          Initialize Agent Memory
+agentmem install-instructions                                 Install router into AGENTS.md
+agentmem uninstall-instructions                               Remove router from AGENTS.md
+agentmem doctor [--index|--deep] [--json]                    Check project health
+```
+
+### Memory CRUD
+
+```text
+agentmem add <content> --type <type> [--source <source>]     Create active memory
+agentmem update <id> --reason <r> [--content ...]            Update memory
+agentmem forget <id> --reason <r>                            Archive memory (non-destructive)
+agentmem list [--type <t>] [--all] [--json]                 List memories
+agentmem search <query> [--type <t>] [--json]               Search memories
+agentmem explain <memory-id>                                 Show memory with events
+agentmem stale <memory-id> --reason <r>                     Mark memory as stale
+```
+
+### Shorthand Memory Commands
+
+```text
+agentmem decision <content>                                   Shortcut for type=decision
+agentmem failed <content>                                     Shortcut for type=failed_attempt
+agentmem policy <content> --match <pattern>                   Shortcut for type=command_policy
+agentmem remember <content> --type <type>                    Alias for add
+```
+
+### Retrieval & Injection
+
+```text
+agentmem retrieve <task> [--mode determ|keyword|hybrid|vector]  Retrieve memories
+                          [--rerank] [--reranker none|noop|mock]
+                          [--explain] [--file <p>] [--command <c>] [--limit n] [--json]
+agentmem explain-retrieval <task> [--mode ...] [--json]      Retrieve with full explanations
+agentmem pack <task> [--session <id>] [--json]              Generate memory pack
+agentmem inject <task> [--session <id>] [--json|--format md] Generate + inject pack
+agentmem preflight --command <cmd> [--session <id>] [--json] Check command against policies
+```
+
+### Indexing
+
+```text
+agentmem index [--rebuild|--vector] [--json]                 Rebuild keyword or vector index
+```
+
+### Protocol & Sessions
+
+```text
+agentmem session start <task> [--json]                       Start a session
+agentmem session finish --session <id> --summary "..." [--json]  Finish session
+agentmem session receipt --session <id> [--json]             View session receipt
+agentmem protocol start <task> [--json]                      Session + initial pack
+agentmem protocol check --session <id> [--json]              Check protocol compliance
+agentmem dogfood report --session <id> [--json]              Generate dogfood report
+agentmem event record --session <id> --type <t> --summary "..."   Record evidence
+agentmem event list --session <id> [--json]                 List events
+```
+
+### Candidate Review
+
+```text
+agentmem candidate propose --session <id> --type <t> --content "..."   Propose candidate
+                            [--evidence "..."] [--evidence-event <id>] [--json]
+agentmem candidate list [--status proposed] [--json]        List candidates
+agentmem candidate approve <id> [--json]                     Approve candidate → active memory
+agentmem candidate reject <id> --reason "..." [--json]       Reject candidate
+agentmem manage --plan [--json]                              View candidate review plan
+```
+
+### Lifecycle
+
+```text
+agentmem review [--json]                                     Flag memories needing review
+agentmem dedupe [--resolve] [--json]                        Find (or resolve) duplicate memories
+agentmem merge --target <a> --source <b> --reason <r> [--json]  Merge two memories
+agentmem supersede --old <a> --new <b> --reason <r> [--json]    Replace old with new
+agentmem quality [--json]                                    Generate quality report
+agentmem purge-expired [--json]                              Archive expired memories
+```
+
+### Ingestion & Import/Export
+
+```text
+agentmem ingest <file> --as candidates [--json]             Ingest file as candidates
+agentmem ingest-log <file> --as candidates [--json]         Ingest log as candidates
+agentmem export [--output <file>] [--json]                  Export memory store
+agentmem import <file> [--json]                              Import memory store
+```
+
+### Safety
+
+```text
+agentmem scan [--deep] [--json]                              Scan for secrets & prompt injection
+agentmem audit [--json]                                      Full safety audit report
+agentmem quarantine <id> --reason <r> [--redact] [--json]   Remove unsafe memory from injection
+agentmem unquarantine <id> --reason <r> [--json]            Restore quarantined memory
+```
+
+### Operations
+
+```text
+agentmem migrate status|up [--json]                          View or apply migrations
+agentmem backup [--output <dir>] [--json]                   Backup .agent-memory/ store
+agentmem restore <backup-path> [--json]                     Restore from backup
+agentmem repair [--json]                                     Repair indexes + check corruption
+```
+
+### Evaluations & Benchmarks
+
+```text
+agentmem eval [--json]                                       Run V1 deterministic eval (5 checks)
+agentmem eval live [--write-report] [--json]                Run live-agent proof harness (8 scenarios)
+agentmem benchmark run --fixture <path> [--json]            Run single benchmark fixture
+agentmem benchmark run --all [--json]                       Run all protocol benchmarks
+```
+
+### MCP & Adapters
+
+```text
+agentmem mcp serve [--json]                                  Start MCP server (stdio)
+agentmem adapters list [--json]                             List available agent adapters
+agentmem adapters install <adapter> [--json]               Install adapter instructions
+agentmem adapters uninstall <adapter> [--json]             Remove adapter instructions
+```
+
+---
 
 ## Protocol Spine
 
-The protocol spine adds a local audit trail around the existing memory and preflight workflow. The recommended agent integration path starts the session and loads the memory pack in one command:
-
-```bash
-START=$(pnpm cli protocol start "Implement protocol spine smoke test" --json)
-SESSION=$(printf '%s' "$START" \
-  | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
-
-pnpm cli preflight --command "npm run render" --session "$SESSION" --json
-pnpm cli candidate propose \
-  --session "$SESSION" \
-  --type known_fix \
-  --content "Reusable repo-specific lesson." \
-  --evidence "Evidence from the command, test, or user correction." \
-  --json
-pnpm cli session finish --session "$SESSION" --summary "Smoke test complete." --json
-pnpm cli protocol check --session "$SESSION" --json
-```
-
-`protocol check` reads from SQLite protocol receipts, not from agent self-reporting. Candidate proposals are stored as untrusted `memory_candidates` records and do not create trusted durable memories.
-
-## Agent Workflow
-
-Use memory at natural checkpoints:
-
-```bash
-SESSION=$(agentmem session start "Fix failing CLI tests" --json \
-  | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
-
-agentmem inject "Fix failing CLI tests" --session "$SESSION" --file src/cli/main.ts --json
-agentmem preflight --command "pnpm test" --session "$SESSION" --json
-agentmem event record --session "$SESSION" --type test_result --summary "pnpm test passed." --json
-agentmem candidate propose \
-  --session "$SESSION" \
-  --type known_fix \
-  --content "Reusable repo-specific lesson." \
-  --evidence "Evidence from the command, test, or user correction." \
-  --json
-agentmem session finish --session "$SESSION" --summary "Task completed." --json
-agentmem session receipt --session "$SESSION" --json
-```
-
-Receipts are written by Agent Memory commands, not by agent self-report. They can show session start/finish, packet loading, preflight checks, warnings or blocks, candidate proposals, and candidate reviews.
-
-Use `--evidence-event <event-id>` on `candidate propose` when a candidate should link directly to an event receipt from the same session.
-
-## Agent Router Instructions
-
-Install the Agent Memory router into `AGENTS.md`:
-
-```bash
-agentmem install-instructions
-```
-
-The managed block tells coding agents to:
-
-- start every task with `agentmem protocol start "<task>" --json`
-- use the returned memory pack before planning
-- preflight risky commands
-- record evidence only when meaningful
-- propose candidates only for reusable learning
-- finish the session and run `agentmem protocol check --session <id> --json`
-
-The router is designed to be always memory-aware but rarely noisy. It does not
-ask agents to record trivial events or propose memory for one-off task details.
-
-## Protocol Compliance
-
-Check whether a memory-aware session followed the required protocol:
-
-```bash
-agentmem protocol check --session ses_x
-agentmem protocol check --session ses_x --json
-```
-
-A compliant minimal session has:
-
-- `session_started`
-- `pack_loaded`
-- `session_finished`
-
-Preflights, events, and candidates are reported as activity but are not
-required for every task.
-
-## Protocol Start
-
-Start a memory-aware agent session and load the initial memory pack in one step:
-
-```bash
-agentmem protocol start "Implement feature X"
-agentmem protocol start "Implement feature X" --json
-```
-
-This is equivalent to starting a session and immediately generating a
-session-aware memory pack.
-
-A typical agent flow is:
+The protocol spine adds a local audit trail. Start the session and load the memory pack in one command:
 
 ```bash
 START=$(agentmem protocol start "Implement feature X" --json)
 SESSION=$(printf '%s' "$START" \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).sessionId))')
-# use returned memory pack before planning
-agentmem preflight --command "..." --session "$SESSION"
-agentmem event record --session "$SESSION" --type command_result --summary "..."
-agentmem candidate propose --session "$SESSION" --type failed_attempt --content "..." --evidence "..."
-agentmem session finish --session "$SESSION" --summary "..."
-agentmem protocol check --session "$SESSION"
+
+# Use the returned memory pack before planning
+agentmem preflight --command "pnpm test" --session "$SESSION" --json
+agentmem event record --session "$SESSION" --type command_result --summary "Tests pass." --json
+agentmem candidate propose --session "$SESSION" --type known_fix \
+  --content "Reusable lesson learned." --evidence "Details..." --json
+agentmem session finish --session "$SESSION" --summary "Feature X implemented." --json
+agentmem protocol check --session "$SESSION" --json
 ```
 
-`protocol start` does not finish the session, run preflights, record events, or
-propose candidates automatically.
+A compliant minimal session has: `session_started`, `pack_loaded`, and `session_finished`.
 
-## Dogfood Reports
+---
 
-Generate a local dogfood report for a memory-aware implementation session:
+## Retrieval Engine
 
-```bash
-agentmem dogfood report --session ses_x
-agentmem dogfood report --session ses_x --json
-```
+Agent Memory supports four retrieval modes, all local:
 
-Dogfood reports are read-only summaries derived from protocol compliance data.
-They show whether the protocol completed and whether useful dogfood signals
-appeared, such as memory injection, preflight use, evidence capture, and
-candidate learning.
+| Mode | Description |
+|------|-------------|
+| `deterministic` | **Default.** Token overlap + type/severity/confidence scoring + pinned/priority + recency + command matching. No external dependencies. |
+| `keyword` | SQLite FTS5 full-text search with BM25 ranking. |
+| `hybrid` | Merges deterministic, keyword, and vector results additively. |
+| `vector` | Local hash-based 64-dim embedding + cosine similarity. No external calls. |
 
-A report does not create memory, write receipts, or judge product usefulness
-automatically. It helps review real dogfood sessions.
+**Reranking**: Optional, off by default. Supports `none`/`noop` (preserves order), `mock` (lexical overlap rerank). External LLM reranking requires a provider adapter — not connected by default.
 
-## Dogfooding v0.3
+**Safety gate**: All modes share a single visibility gate (`isAgentVisibleMemory`) that excludes archived, rejected, quarantined, superseded, expired, redacted, secret-flagged, unsafe, prompt-injection-flagged, and untrusted memories.
 
-Use the dogfood runbook for non-trivial implementation PRs:
-
-- `docs/dogfood/runbook.md`
-- `docs/dogfood/pr-checklist.md`
-- `docs/dogfood/subagent-program.md`
-- `docs/dogfood/v0.3-completion-plan.md`
-
-The v0.3 completion plan uses three real feature PRs reviewed by fresh-context
-sub-agents.
-
-## Candidate Review
-
-Agents can propose memory candidates, but candidates are untrusted until
-reviewed.
-
-```bash
-agentmem candidate propose --session ses_x --type failed_attempt --content "..." --evidence "..."
-agentmem manage --plan
-agentmem candidate approve cand_x
-agentmem candidate reject cand_y --reason "Too task-specific."
-```
-
-Approved candidates become active memory and can appear in future packs.
-Rejected candidates are retained for audit but are never injected.
-
-## Evidence Events
-
-Events provide auditable source material for memory candidates.
-
-```bash
-agentmem event record \
-  --session ses_x \
-  --type command_result \
-  --command "pnpm typecheck" \
-  --exit-code 1 \
-  --summary "Typecheck failed when JSX children were stored in defineEntry props."
-
-agentmem candidate propose \
-  --session ses_x \
-  --type failed_attempt \
-  --content "Using defineEntry for JSX-child demos fails with JSX children." \
-  --evidence-event evt_x
-```
-
-Candidates can still use `--evidence "..."`, but `--evidence-event`
-preserves stronger provenance.
-
-## Protocol Benchmarks
-
-Protocol benchmarks run deterministic local fixtures that check memory pack
-recall, preflight behavior, candidate proposal, evidence receipts, and protocol
-receipts.
-
-```bash
-agentmem benchmark run --fixture benchmarks/fixtures/protocol/old-mistake-avoidance.json
-agentmem benchmark run --all --json
-```
-
-Benchmarks run in isolated temporary workspaces and do not mutate the current
-project's `.agent-memory` database.
-
-## Commands
-
-```text
-agentmem init [--git-init] [--json]
-agentmem install-instructions
-agentmem uninstall-instructions
-agentmem doctor [--index|--deep] [--json]
-agentmem session start "<task>" [--json]
-agentmem session finish --session <session-id> --summary "..." [--json]
-agentmem session receipt --session <session-id> [--json]
-agentmem protocol start "<task>" [--json]
-agentmem protocol check --session <session-id> [--json]
-agentmem dogfood report --session <session-id> [--json]
-agentmem event record --session <session-id> --type <type> --summary "..." [--command "..."] [--exit-code 1] [--json]
-agentmem event list --session <session-id> [--json]
-agentmem add <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]
-agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b]
-agentmem decision <content>
-agentmem failed <content>
-agentmem policy <content> --match <pattern> [--match-type substring|exact|regex] [--decision allow|warn|block]
-agentmem index [--rebuild|--vector] [--json]
-agentmem retrieve <task> [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--file <path>] [--command <command>] [--json]
-agentmem explain-retrieval <task> [--mode deterministic|keyword|hybrid|vector] [--json]
-agentmem inject <task> [--session <session-id>] [--file <path>] [--command <command>] [--json|--format markdown]
-agentmem pack <task> [--session <session-id>] [--json]
-agentmem preflight --command <command> [--session <session-id>] [--json]
-agentmem eval [--json]
-agentmem eval live [--write-report] [--json]
-agentmem mcp serve [--json]
-agentmem adapters list|install|uninstall <adapter> [--json]
-agentmem candidate propose --session <session-id> --type <type> --content "..." [--evidence "..."] [--evidence-event <event-id>] [--json]
-agentmem candidate list [--status proposed] [--json]
-agentmem candidate approve <candidate-id> [--json]
-agentmem candidate reject <candidate-id> --reason "..." [--json]
-agentmem manage --plan [--json]
-agentmem benchmark run --fixture <path> [--json]
-agentmem benchmark run --all [--json]
-agentmem search <query> [--type <type>] [--json]
-agentmem list [--type <type>] [--all] [--json]
-agentmem update <memory-id> --reason <reason> [--content "..."] [--type <type>] [--status <status>] [--tags a,b] [--paths a,b] [--pinned true|false] [--priority n]
-agentmem forget <memory-id> --reason <reason>
-agentmem review|dedupe|quality [--json]
-agentmem merge --target <memory-id> --source <memory-id> --reason <reason> [--json]
-agentmem supersede --old <memory-id> --new <memory-id> --reason <reason> [--json]
-agentmem ingest <file> --as candidates [--json]
-agentmem ingest-log <file> --as candidates [--json]
-agentmem export [--output <file>] [--json]
-agentmem import <file> [--json]
-agentmem migrate status|up [--json]
-agentmem backup [--output <dir>] [--json]
-agentmem restore <backup-path> [--json]
-agentmem repair [--json]
-agentmem scan [--deep] [--json]
-agentmem audit [--json]
-agentmem quarantine <memory-id> --reason <reason> [--redact] [--json]
-agentmem stale <memory-id> --reason <reason>
-agentmem explain <memory-id>
-```
-
-Compatibility aliases remain available: `remember` for `add`, and `pack` for `inject`.
-
-## Memory Types
-
-Current durable memory types include:
-
-- `decision`
-- `constraint`
-- `preference`
-- `command_policy`
-- `failed_attempt`
-- `known_fix`
-- `agent_mistake`
-- `fragile_file`
-- `workflow_rule`
-- `architecture_note`
-- `design_rule`
-- `rejected_approach`
-- `pending_task`
-- `tool_quirk`
-
-Candidate proposal currently supports `failed_attempt`, `known_fix`, `agent_mistake`, `workflow_rule`, and `command_policy`.
-
-## Retrieval
-
-Retrieval is local. Deterministic retrieval is the default and safety baseline. Keyword retrieval uses SQLite FTS, vector retrieval uses a local hash embedding provider and local JSON index, and hybrid retrieval merges deterministic, keyword, and vector candidates after the shared visibility gate.
-
-Deterministic retrieval scores active eligible memories using:
-
-- task token overlap
-- file path matches
-- tag matches
-- command policy matches
-- type, confidence, and severity priority
-- pinned and priority metadata
-- recency and use count
-- failed-attempt, mistake, known-fix, and rejected-approach boosts
-- basic supersession and conflict-group handling
-
-Archived, rejected, quarantined, superseded, blocked/redacted, expired, unsafe, prompt-injection-flagged, and secret-flagged memories are excluded from normal packets. Stale and unverified memories are controlled by project config.
-
-The same agent-visible eligibility rules are used by command preflight, so blocked, redacted, expired, superseded, secret-flagged, and do-not-include command policies cannot affect preflight decisions.
+---
 
 ## Safety Model
 
 Agent Memory is designed for local project state, not secret management.
 
-- `.agent-memory/` is local state and should not be committed.
-- Obvious secrets are rejected in trusted memory writes and candidate proposals.
-- Candidate memory is untrusted until approved.
-- Rejected candidates stay available for audit but are not injected.
-- `forget` archives memory instead of deleting it.
-- `scan --deep` detects secret and prompt-injection patterns.
-- `audit` reports safety findings and non-injectable memory.
-- `quarantine` non-destructively removes unsafe memory from retrieval, packs, preflight, and MCP output.
+- **Write-time blocking**: Obvious secrets (API keys, tokens, passwords) rejected in memory creation and candidate proposals.
+- **Deep scanning**: `agentmem scan --deep` detects 14 secret patterns + 4 prompt-injection patterns across memories, events, and candidates.
+- **Visibility gate**: `isAgentVisibleMemory()` deterministically excludes unsafe memory from all retrieval, injection, preflight, vector search, and MCP paths. No LLM dependency.
+- **Quarantine**: `agentmem quarantine` non-destructively removes unsafe memory from all paths. `agentmem unquarantine` restores after review.
+- **Trust levels**: `trusted`, `reviewed`, `low`, `untrusted`. Untrusted memories are excluded from all retrieval paths.
+- **Candidate untrusted by default**: Agent-proposed memories must be reviewed before becoming active.
+- **Forget archives, never deletes**: Audit trail preserved.
+- **Redactions**: Support for `redacted` and `blocked` status — both excluded from injection.
 
-Candidates can cite evidence text, linked evidence event receipts, or both. Linked events provide stronger provenance because they point back to a recorded command result, test result, user correction, or reusable observation from the session.
+Memory content is data, not authority. Retrieved memory does not override trusted command policy or user instruction hierarchy.
 
-## MCP
+---
 
-`agentmem mcp serve --json` prints the MCP manifest. Plain `agentmem mcp serve` starts a JSON-lines stdio request loop. MCP is read-only by default, exposes no shell command execution, and refuses uninitialized project roots. Write tools require `mcp.write_tools_enabled`; candidate approval also requires `mcp.candidate_approval_enabled`.
+## MCP Server
 
-## Limitations
+`agentmem mcp serve` starts a JSON-lines stdio MCP loop.
 
-Agent Memory remains local-first and intentionally does not:
+| Feature | Behavior |
+|---------|----------|
+| Read-only by default | All 7 resources and 9 read tools available without config |
+| Write tools config-gated | Require `mcp.write_tools_enabled` in project config |
+| Candidate approval separately gated | Also requires `mcp.candidate_approval_enabled` |
+| No shell execution | MCP exposes no command execution surface |
+| Project isolation | All queries scoped to project; uninitialized roots refused |
 
-- guarantee that a coding agent will obey injected memory;
-- proxy or hard-block shell commands by default;
-- prove that external live agents produce better code;
-- automatically trust agent-generated memories;
-- replace human review of memory candidates;
-- provide hosted sync or a dashboard;
-- call external embedding or LLM reranking providers by default.
+**Resources**: project, memories, pack, session receipt, candidates, scan, retrieval explanation.
+**Tools**: protocol start, retrieve, inject, preflight, event record, candidate propose/list/approve/reject, protocol check, scan, create/update/forget memory.
 
-The local `eval` command verifies deterministic retrieval, packet generation, filtering, and context-delta behavior. `eval live` is a deterministic local harness over scripted scenarios; it does not claim universal external agent behavior.
+---
+
+## Agent Adapters
+
+Six adapters produce idempotent install/uninstall blocks:
+
+| Adapter | Target |
+|---------|--------|
+| `codex` | `AGENTS.md` |
+| `claude-code` | `CLAUDE.md` |
+| `cursor` | `.cursor/rules/agent-memory.mdc` |
+| `command-code` | `.commandcode/taste/agent-memory.md` |
+| `opencode` | `AGENTS.md` |
+| `generic` | `AGENTS.md` |
+
+All adapters use adapter-specific HTML markers — multiple adapters can coexist in the same file without conflict. Install is idempotent; uninstall preserves user content outside the managed block.
+
+---
+
+## Memory Lifecycle
+
+- **Review**: Flags memories needing attention (unverified, stale, quarantined, low confidence, safety flags, redactions, low/untrusted trust level).
+- **Dedupe**: Detects duplicates by normalized `type:content`. `--resolve` auto-merges groups.
+- **Merge**: Combines tags, paths, and relationships; archives source.
+- **Supersede**: Replaces old memory with new; old is excluded from all retrieval paths.
+- **Quality**: Counts total, injectable, duplicate, stale, unsafe, and low-trust memories.
+- **Expiry**: `purge-expired` archives memories past their `expiresAt` timestamp.
+
+Every lifecycle change creates audit events.
+
+---
+
+## Import / Export
+
+```bash
+agentmem export --output backup.json
+agentmem import backup.json
+```
+
+- **Format**: `agent-memory-v2-json` envelope with provenance block.
+- **Safety**: Imported content is secret-scanned; duplicates are skipped (configurable).
+- **Provenance**: Every imported record carries `agentMemoryProvenance` metadata linking back to source project and timestamp.
+- **Candidates by default**: Ingested files and logs become candidates, not active memory.
+
+---
+
+## Backup / Restore / Migrations
+
+```bash
+agentmem backup                          # Backs up to .agent-memory/backups/
+agentmem backup --output /safe/path      # Custom backup location
+agentmem restore .agent-memory/backups/backup-2026-06-28T...
+agentmem repair                          # Rebuild indexes, check JSON corruption
+agentmem migrate status                  # View schema version + pending migrations
+agentmem migrate up                      # Apply pending column migrations
+```
+
+- Backups are file copies of the `.agent-memory/` directory.
+- Restore creates a safety backup of current state before overwriting.
+- Repair rebuilds both keyword and vector indexes and surfaces corrupt JSON fields by name.
+- Open-time migrations are idempotent and add missing columns automatically.
+
+---
+
+## Evaluations & Benchmarks
+
+### V1 Deterministic Eval (5 checks)
+
+```bash
+agentmem eval --json
+```
+
+Checks: basic retrieval, pinned inclusion, conflict handling, secret redaction, context delta. All deterministic, no external agents.
+
+### Live-Agent Proof Harness (8 scenarios)
+
+```bash
+agentmem eval live --write-report --json
+```
+
+Scenarios: avoid npm in pnpm repo, avoid fragile file, avoid known failed approach, respect architecture decision, respect command preflight, propose reusable learning, ignore stale/superseded memory, avoid secret-bearing memory. Local deterministic harness over scripted scenarios — does not invoke external models.
+
+### Protocol Benchmarks (4 fixtures)
+
+```bash
+agentmem benchmark run --all --json
+```
+
+Fixtures: old-mistake-avoidance, noise-control, event-backed-candidate, command-preflight-warn. Run in isolated temporary workspaces.
+
+---
 
 ## Repository Layout
 
-- `src/cli/`: command parsing and terminal output.
-- `src/core/`: project use cases such as init, retrieval, packet generation, sessions, candidates, and preflight.
-- `src/vector/`, `src/ranking/`, `src/safety/`, `src/lifecycle/`, `src/ingestion/`, `src/ops/`, `src/mcp/`, `src/adapters/`, `src/evals/`: V2 focused modules.
-- `src/db/`: SQLite schema and repository access.
-- `src/domain/`: domain enums, record shapes, defaults, guards, and validators.
-- `src/formatters/`: markdown and text formatters.
-- `tests/`: unit, CLI, protocol, and smoke tests.
-- `benchmarks/fixtures/`: deterministic benchmark fixtures.
-- `docs/`: protocol, architecture, testing, and release documentation.
-- `examples/`: runnable documentation examples.
+```
+src/
+  cli/          Command parsing and terminal output
+  core/         Memory CRUD, retrieval, packets, sessions, candidates, preflight, scan
+  vector/       Embedding provider + local vector index
+  ranking/      Reranker interface + mock/noop implementations
+  safety/       Audit reports, quarantine/unquarantine
+  lifecycle/    Review, dedupe, merge, supersede, quality, expiry purge
+  ingestion/    File/log ingestion, chunking, JSON import/export, provenance
+  ops/          Migration status, backup, restore, repair
+  mcp/          MCP manifest, project loader, resources, tools, params, server
+  adapters/     Adapter registry + idempotent install/uninstall
+  evals/        Deterministic eval + live-agent proof harness
+  db/           SQLite schema, migrations, repository access
+  domain/       Types, enums, defaults, guards, validators
+  formatters/   Markdown/text output formatters
+tests/          31 test files, 181 tests (unit, integration, CLI, security, golden, MCP, adapter)
+benchmarks/     Deterministic benchmark fixtures + golden test data
+docs/           13 documentation files + 6 production tracking files
+```
+
+---
 
 ## Development
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm test
 pnpm typecheck
+pnpm test
 pnpm build
+pnpm cli --help
 ```
 
-CLI smoke tests can use:
+**Verification checklist:**
 
 ```bash
-pnpm cli <command>
+pnpm typecheck                    # Zero errors
+pnpm test                         # 31 files, 181 tests
+pnpm build                        # Clean dist/
+pnpm cli eval --json             # 5/5 V1 checks
+pnpm cli eval live --json        # 8/8 live scenarios
+pnpm cli benchmark run --all     # 4/4 fixtures
+node dist/cli/main.js --help     # Built CLI matches source
+npm pack --dry-run --json        # Clean package contents
 ```
 
-Run the deterministic local V1 eval harness with:
+---
 
-```bash
-pnpm cli eval --json
-```
+## Documentation
 
-## Production V2 Tracking
+| Document | Description |
+|----------|-------------|
+| [Getting Started](docs/getting-started.md) | First-time setup and workflow |
+| [Concepts](docs/concepts.md) | Memory, candidates, packets, protocol receipts |
+| [Architecture](docs/architecture.md) | Module boundaries and design decisions |
+| [Retrieval](docs/retrieval.md) | All four modes + reranking |
+| [MCP](docs/mcp.md) | MCP server, resources, tools, security posture |
+| [Adapters](docs/adapters.md) | Agent adapter install/uninstall flows |
+| [Security](docs/security.md) | Scan, audit, quarantine, trust model |
+| [Evals](docs/evals.md) | Eval commands and proof harness |
+| [Config](docs/config.md) | Project configuration schema |
+| [Migrations](docs/migrations.md) | Backup, restore, repair, migrations |
+| [Troubleshooting](docs/troubleshooting.md) | Common issues and resolutions |
+| [Comparison](docs/comparison.md) | Vs plain docs and external services |
+| [Proof Report](docs/proof/live-agent-eval-report.md) | Live-agent eval results and limitations |
 
-Production V2 tracking is recorded in `docs/production/`. Release status must be read from the implementation matrix, verification record, and V2 release readiness checklist.
+**Production tracking:** See `docs/production/` for the implementation matrix, architecture decisions, verification record, and release readiness checklist.
 
-See [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/testing.md), [docs/retrieval.md](docs/retrieval.md), [docs/mcp.md](docs/mcp.md), [docs/adapters.md](docs/adapters.md), [docs/security.md](docs/security.md), [docs/evals.md](docs/evals.md), and [docs/migrations.md](docs/migrations.md).
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, workflow expectations, testing standards, and the release process.
+
+- Keep changes small, deterministic, and auditable.
+- Add tests for new behavior.
+- Do not introduce hosted services or cloud dependencies.
+- Read the [Security Policy](SECURITY.md) before reporting vulnerabilities.
+
+---
+
+## License
+
+MIT © [Hemang Doshi](https://github.com/hemang-doshi)

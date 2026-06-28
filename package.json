@@ -1,7 +1,7 @@
 {
   "name": "agent-memory-preflight",
-  "version": "1.0.0",
-  "description": "Local-first project memory and preflight CLI for coding agents.",
+  "version": "2.0.0",
+  "description": "Local-first project memory system for coding agents — stores decisions, constraints, command policies, failed attempts, fixes, and lessons in a local SQLite store with deterministic retrieval, keyword/vector/hybrid search, optional reranking, MCP, agent adapters, import/export, backup/restore, and a live-agent proof harness.",
   "type": "module",
   "bin": {
     "agentmem": "./dist/cli/main.js"
@@ -12,7 +12,8 @@
     "LICENSE",
     "CHANGELOG.md",
     "SECURITY.md",
-    "CONTRIBUTING.md"
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -26,7 +27,15 @@
     "memory",
     "mcp",
     "sqlite",
-    "agents"
+    "agents",
+    "local-first",
+    "deterministic",
+    "protocol",
+    "preflight",
+    "retrieval",
+    "vector-search",
+    "candidates",
+    "provenance"
   ],
   "repository": {
     "type": "git",

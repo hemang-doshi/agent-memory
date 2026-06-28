@@ -1,28 +1,37 @@
 ---
-name: Bug report
-about: Report reproducible Agent Memory behavior
-title: ""
+name: Bug Report
+about: Report a bug in Agent Memory
+title: "[bug] "
 labels: bug
-assignees: ""
+assignees: ''
 ---
 
-## What happened?
+## Bug Description
 
+<!-- A clear, concise description of what the bug is. -->
 
-## Expected behavior
+## Steps to Reproduce
 
+1.
+2.
+3.
 
-## Reproduction steps
+## Expected Behavior
 
-1. 
+<!-- What you expected to happen. -->
+
+## Actual Behavior
+
+<!-- What actually happened, including error output. -->
 
 ## Environment
 
-- OS:
-- Node version:
-- Package version or commit:
-- Command:
+- **OS**: [e.g., macOS 15, Ubuntu 24.04]
+- **Node.js**: `node --version`
+- **pnpm**: `pnpm --version`
+- **Agent Memory**: `agentmem --help` version output or commit hash
+- **SQLite version**: if relevant
 
-## Logs or receipts
+## Additional Context
 
-Paste relevant CLI output, redacted if needed.
+<!-- Logs, screenshots, reproduction scripts, or anything else that helps. -->

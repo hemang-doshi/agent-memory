@@ -1,19 +1,29 @@
 ---
-name: Feature request
-about: Propose a scoped Agent Memory improvement
-title: ""
+name: Feature Request
+about: Propose a new feature or enhancement
+title: "[feature] "
 labels: enhancement
-assignees: ""
+assignees: ''
 ---
 
-## Problem
+## Problem Statement
 
+<!-- What problem does this feature solve? Be specific. -->
 
-## Proposed behavior
+## Proposed Solution
 
+<!-- Describe what you want to happen. -->
 
-## Why this belongs in Agent Memory
+## Alternatives Considered
 
+<!-- What alternatives have you already thought about? -->
 
-## Local-first or safety considerations
+## Impact
 
+- **Does this change default behavior?** yes / no
+- **Does this require external services?** yes / no
+- **Does this affect local-first guarantees?** yes / no
+
+## Additional Context
+
+<!-- Any other context, links, or references. -->
