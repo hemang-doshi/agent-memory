@@ -247,7 +247,7 @@ function helpText(): string {
     "  agentmem session receipt --session <session-id> [--json]",
     "  agentmem add <content> --type <type> [--source <source>] [--path <path>] [--tags a,b] [--pinned] [--priority n]",
     "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b] [--pinned] [--priority n]",
-    "  agentmem protocol start \"<task>\" [--json]",
+    "  agentmem protocol start \"<task>\" [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--limit n] [--json]",
     "  agentmem protocol check --session <session-id> [--json]",
     "  agentmem dogfood report --session <session-id> [--json]",
     "  agentmem event record --session <session-id> --type <type> --summary \"...\" [--command \"...\"] [--exit-code 1] [--json]",
@@ -267,7 +267,7 @@ function helpText(): string {
     "  agentmem mcp serve [--json]",
     "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" [--evidence \"...\"] [--evidence-event <event-id>] [--json]",
     "  agentmem candidate list [--status proposed] [--json]",
-    "  agentmem candidate approve <candidate-id> [--json]",
+    "  agentmem candidate approve <candidate-id> --reason \"...\" [--json]",
     "  agentmem candidate reject <candidate-id> --reason \"...\" [--json]",
     "  agentmem manage --plan [--json]",
     "  agentmem benchmark run --fixture <path> [--json]",
@@ -672,7 +672,11 @@ async function main(): Promise<void> {
           throw new Error("candidate approve requires a candidate id");
         }
 
-        const result = await approveCandidate({ cwd, candidateId });
+        const result = await approveCandidate({
+        cwd,
+        candidateId,
+        reason: requireOption(parsed, "reason")
+      });
         render(
           asJson
             ? {

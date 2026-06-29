@@ -114,7 +114,7 @@ describe("protocol check", () => {
       content: "Using render during routine tests is avoidable.",
       evidence: "Preflight warned before render."
     });
-    await approveCandidate({ cwd, candidateId: candidate.candidateId });
+    await approveCandidate({ cwd, candidateId: candidate.candidateId, reason: "test review" });
     await finishSession({ cwd, sessionId: session.sessionId, summary: "Done." });
 
     const report = await checkProtocolCompliance({ cwd, sessionId: session.sessionId });

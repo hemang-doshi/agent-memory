@@ -48,7 +48,7 @@ describe("manage plan", () => {
     const proposed = await propose(cwd, "Proposed candidate.");
     const approved = await propose(cwd, "Approved candidate.");
     const rejected = await propose(cwd, "Rejected candidate.");
-    await approveCandidate({ cwd, candidateId: approved.candidateId });
+    await approveCandidate({ cwd, candidateId: approved.candidateId, reason: "test review" });
     await rejectCandidate({
       cwd,
       candidateId: rejected.candidateId,

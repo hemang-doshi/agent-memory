@@ -51,7 +51,7 @@ describe("candidate review", () => {
     await initProject({ cwd });
     const { session, candidate } = await createCandidate(cwd);
 
-    const approved = await approveCandidate({ cwd, candidateId: candidate.candidateId });
+    const approved = await approveCandidate({ cwd, candidateId: candidate.candidateId, reason: "test review" });
 
     expect(approved.candidate.candidateStatus).toBe("approved");
     expect(approved.candidate.targetMemoryId).toBe(approved.memory.id);
@@ -101,7 +101,7 @@ describe("candidate review", () => {
       evidenceEventId: event.eventId
     });
 
-    const approved = await approveCandidate({ cwd, candidateId: candidate.candidateId });
+    const approved = await approveCandidate({ cwd, candidateId: candidate.candidateId, reason: "test review" });
 
     expect(approved.candidate.evidenceEventIds).toEqual([event.eventId]);
     expect(approved.memory.metadata).toMatchObject({
@@ -117,8 +117,8 @@ describe("candidate review", () => {
     await initProject({ cwd });
     const { candidate } = await createCandidate(cwd);
 
-    await approveCandidate({ cwd, candidateId: candidate.candidateId });
-    await expect(approveCandidate({ cwd, candidateId: candidate.candidateId })).rejects.toThrow(
+    await approveCandidate({ cwd, candidateId: candidate.candidateId, reason: "test review" });
+    await expect(approveCandidate({ cwd, candidateId: candidate.candidateId, reason: "test review" })).rejects.toThrow(
       `Candidate is not proposed: ${candidate.candidateId} is already approved.`
     );
 
@@ -129,7 +129,7 @@ describe("candidate review", () => {
       reason: "Too task-specific."
     });
     await expect(
-      approveCandidate({ cwd, candidateId: rejectedCandidate.candidateId })
+      approveCandidate({ cwd, candidateId: rejectedCandidate.candidateId, reason: "test review" })
     ).rejects.toThrow(
       `Candidate is not proposed: ${rejectedCandidate.candidateId} is already rejected.`
     );
@@ -139,7 +139,7 @@ describe("candidate review", () => {
     const cwd = await createTempWorkspace("agentmem-candidate-approve-errors");
     workspaces.push(cwd);
     await initProject({ cwd });
-    await expect(approveCandidate({ cwd, candidateId: "cand_missing" })).rejects.toThrow(
+    await expect(approveCandidate({ cwd, candidateId: "cand_missing", reason: "test review" })).rejects.toThrow(
       "Unknown candidate: cand_missing"
     );
 
@@ -161,7 +161,7 @@ describe("candidate review", () => {
       project.close();
     }
 
-    await expect(approveCandidate({ cwd, candidateId: candidate.candidateId })).rejects.toThrow(
+    await expect(approveCandidate({ cwd, candidateId: candidate.candidateId, reason: "test review" })).rejects.toThrow(
       "Candidate rejected by hygiene check: possible secret detected."
     );
   });
@@ -179,7 +179,7 @@ describe("candidate review", () => {
       evidence: "Render is expensive."
     });
 
-    await expect(approveCandidate({ cwd, candidateId: candidate.candidateId })).rejects.toThrow(
+    await expect(approveCandidate({ cwd, candidateId: candidate.candidateId, reason: "test review" })).rejects.toThrow(
       "Missing required command policy metadata: commandPattern"
     );
 
@@ -205,7 +205,7 @@ describe("candidate review", () => {
       }
     });
 
-    const approved = await approveCandidate({ cwd, candidateId: candidate.candidateId });
+    const approved = await approveCandidate({ cwd, candidateId: candidate.candidateId, reason: "test review" });
     expect(approved.candidate.candidateStatus).toBe("approved");
     expect(approved.memory.type).toBe("command_policy");
     expect(approved.memory.metadata).toMatchObject({
@@ -299,7 +299,7 @@ describe("candidate review", () => {
     );
     const candidateId = JSON.parse(proposedJson.stdout).candidateId as string;
 
-    const approvedJson = await runCli(["candidate", "approve", candidateId, "--json"], cwd);
+    const approvedJson = await runCli(["candidate", "approve", candidateId, "--reason", "test approve via CLI", "--json"], cwd);
     expect(JSON.parse(approvedJson.stdout)).toMatchObject({
       candidate: {
         candidateId,

@@ -14,10 +14,18 @@ export const PROTOCOL_START_NEXT_STEPS = [
 
 export async function startProtocol({
   cwd,
-  task
+  task,
+  mode,
+  rerank,
+  reranker,
+  maxResults
 }: {
   cwd: string;
   task: string;
+  mode?: import("../domain/types.js").RetrievalMode;
+  rerank?: boolean;
+  reranker?: import("../domain/types.js").RerankerMode;
+  maxResults?: number;
 }): Promise<ProtocolStartResult> {
   const normalizedTask = task.trim();
   if (!normalizedTask) {
@@ -29,7 +37,11 @@ export async function startProtocol({
     const pack = await generatePack({
       cwd,
       task: normalizedTask,
-      sessionId: session.sessionId
+      sessionId: session.sessionId,
+      mode,
+      rerank,
+      reranker,
+      maxResults
     });
 
     return {

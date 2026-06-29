@@ -198,7 +198,8 @@ async function callTool(
       assertCandidateApprovalAllowed(loaded, name);
       return approveCandidate({
         cwd: loaded.cwd,
-        candidateId: requireString(rawParams, "candidateId")
+        candidateId: requireString(rawParams, "candidateId"),
+        reason: requireString(rawParams, "reason")
       });
     default:
       throw new McpRequestError("unknown_tool", `Unknown MCP tool: ${toolName}`);
