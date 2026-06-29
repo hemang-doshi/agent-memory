@@ -159,6 +159,72 @@ export async function runProjectMindEval(): Promise<ProjectMindResult> {
       });
     }
 
+    // Scenario 5: architecture-decision
+    {
+      const noMemoryCwd = await tempWorkspace("ad-no-mem-");
+      workspaces.push(noMemoryCwd);
+      await initProject({ cwd: noMemoryCwd });
+      const withMemoryCwd = await tempWorkspace("ad-with-mem-");
+      workspaces.push(withMemoryCwd);
+      await initProject({ cwd: withMemoryCwd });
+      await createMemory({
+        cwd: withMemoryCwd,
+        content: "Use repository layer; no direct DB access from route handlers.",
+        type: "architecture_note",
+        source: "user_explicit",
+        severity: "high"
+      });
+
+      const noMem = await retrieveMemories({ cwd: noMemoryCwd, task: "update package.json", dryRun: true });
+      const withMem = await retrieveMemories({ cwd: withMemoryCwd, task: "add direct DB query to the user route handler", dryRun: true });
+      const hasDecision = withMem.some((m) => m.type === "architecture_note");
+
+      scenarios.push({
+        name: "architecture-decision",
+        passed: !noMem.some((m) => m.type === "architecture_note") && hasDecision,
+        noMemory: { memoryCount: noMem.length },
+        withMemory: { memoryCount: withMem.length, includesArchitectureNote: hasDecision },
+        delta: hasDecision ? "architecture decision surfaced for DB-related task" : "no delta"
+      });
+    }
+
+    // Scenario 6: supersession-visibility
+    {
+      const cwd = await tempWorkspace("ss-mem-");
+      workspaces.push(cwd);
+      await initProject({ cwd });
+      const old = await createMemory({
+        cwd,
+        content: "Use npm for package management.",
+        type: "workflow_rule",
+        source: "user_explicit"
+      });
+      const replacement = await createMemory({
+        cwd,
+        content: "Use pnpm for all package operations.",
+        type: "workflow_rule",
+        source: "user_explicit"
+      });
+      const { supersedeMemory } = await import("../../lifecycle/lifecycle.js");
+      await supersedeMemory({ cwd, oldMemoryId: old.id, newMemoryId: replacement.id, reason: "Updated to pnpm" });
+
+      let results = await retrieveMemories({ cwd, task: "package manager", dryRun: true });
+      const oldHidden = !results.some((m) => m.id === old.id);
+      const replacementVisible = results.some((m) => m.id === replacement.id);
+
+      await quarantineMemory({ cwd, memoryId: replacement.id, reason: "Test quarantine" });
+      results = await retrieveMemories({ cwd, task: "package manager", dryRun: true });
+      const replacementHidden = !results.some((m) => m.id === replacement.id);
+
+      scenarios.push({
+        name: "supersession-visibility",
+        passed: oldHidden && replacementVisible && replacementHidden,
+        noMemory: {},
+        withMemory: { oldSupersededAndHidden: oldHidden, replacementVisible, replacementHiddenAfterQuarantine: replacementHidden },
+        delta: "superseded memory hidden; superseding memory hidden after quarantine"
+      });
+    }
+
     const passed = scenarios.filter((s) => s.passed).length;
     const failed = scenarios.filter((s) => !s.passed).length;
 

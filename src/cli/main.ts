@@ -863,23 +863,27 @@ async function main(): Promise<void> {
     }
     case "preflight": {
       const commandValue = requireOption(parsed, "command");
-      const result = await preflightCommand({
-        cwd,
-        command: commandValue,
-        sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
-      });
-      const enforce = Boolean(parsed.options.enforce);
+      const loaded = await import("../core/context.js").then((m) => m.loadProject(cwd));
+      try {
+        const result = await preflightCommand({
+          cwd,
+          command: commandValue,
+          sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
+        });
+        const enforce = Boolean(parsed.options.enforce);
 
-      render(asJson ? result : formatTextPreflight(result), asJson);
+        render(asJson ? result : formatTextPreflight(result), asJson);
 
-      if (enforce) {
-        if (result.decision === "block") {
-          process.exitCode = 2;
-        } else if (result.decision === "warn") {
-          process.exitCode = 1;
+        if (enforce) {
+          if (result.decision === "block") {
+            process.exitCode = loaded.context.config.preflight.enforce_block_exit_code;
+          } else if (result.decision === "warn") {
+            process.exitCode = loaded.context.config.preflight.enforce_warn_exit_code;
+          }
         }
+      } finally {
+        loaded.close();
       }
-
       return;
     }
     case "run": {
