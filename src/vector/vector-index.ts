@@ -197,6 +197,7 @@ export function searchVectorIndexReadOnly({
   query,
   limit,
   visibleMemoryIds,
+  projectId,
   providerId = "local"
 }: {
   memoryDir: string;
@@ -210,6 +211,15 @@ export function searchVectorIndexReadOnly({
   const path = vectorIndexPath(memoryDir);
   const index = readIndexUnsafe(path);
   if (!index || index.entries.length === 0) {
+    return [];
+  }
+  if (index.projectId !== projectId) {
+    return [];
+  }
+  if (index.provider !== provider.name) {
+    return [];
+  }
+  if (index.dimensions !== provider.dimensions) {
     return [];
   }
   const queryEmbedding = provider.embed(query);

@@ -1,4 +1,5 @@
 import type { MemoryRecord } from "../domain/types.js";
+import { planPackMemories } from "./pack-planner.js";
 
 export interface PackSectionItem {
   id: string;
@@ -136,17 +137,33 @@ export function formatPackMarkdown(
   memories: MemoryRecord[],
   options: { generatedAt?: string; budgetCharacters?: number } = {}
 ): string {
-  const sections = buildPackSections(memories);
+  let selected = memories;
+  let omittedSummary = "";
+
+  if (options.budgetCharacters !== undefined && options.budgetCharacters > 0) {
+    const headerChars = renderHeader(projectName, options.generatedAt).join("\n").length + 50;
+    const plan = planPackMemories({
+      memories,
+      budgetCharacters: options.budgetCharacters,
+      reservedCharacters: headerChars
+    });
+    selected = plan.selected;
+
+    if (plan.omitted.length > 0) {
+      omittedSummary = `\n## Omitted Memories\n- ${plan.omitted.length} lower-priority memories omitted due to configured memory budget.\n`;
+    }
+  }
+
+  const sections = buildPackSections(selected);
   const hasConstraints = sections.some((section) => section.title === "Critical Constraints");
   const markdown = [
     ...renderHeader(projectName, options.generatedAt),
     ...sections.map(renderSection),
-    hasConstraints ? "## Suggested Verification\n- Prefer safe local checks before risky commands.\n" : ""
+    hasConstraints ? "## Suggested Verification\n- Prefer safe local checks before risky commands.\n" : "",
+    omittedSummary
   ]
     .filter(Boolean)
     .join("\n");
 
-  return options.budgetCharacters === undefined
-    ? markdown
-    : truncateMarkdown(markdown, options.budgetCharacters);
+  return markdown;
 }
