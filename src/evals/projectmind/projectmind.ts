@@ -1,4 +1,6 @@
-import type { PreflightResult, MemoryRecord } from "../../domain/types.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export interface ProjectMindScenario {
   name: string;
@@ -16,105 +18,151 @@ export interface ProjectMindResult {
   limitations: string[];
 }
 
+async function tempWorkspace(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  return dir;
+}
+
+async function cleanup(workspaces: string[]): Promise<void> {
+  await Promise.all(workspaces.map((dir) => rm(dir, { recursive: true, force: true })));
+}
+
 export async function runProjectMindEval(): Promise<ProjectMindResult> {
-  const { loadProject } = await import("../../core/context.js");
-  const { createMemory } = await import("../../core/create-memory.js");
-  const { retrieveMemories } = await import("../../core/retrieve-memories.js");
-  const { preflightCommand } = await import("../../core/preflight-command.js");
-  const { quarantineMemory } = await import("../../safety/quarantine.js");
-
-  const cwd = process.cwd();
   const limitations = [
-    "Scenarios run against the current project's .agent-memory/ store.",
-    "This is a deterministic local harness — does not invoke external coding agents.",
-    "Results depend on project state; run from a clean initialized project for reproducible proof."
+    "Each scenario creates isolated temp projects — does not pollute the user's store.",
+    "This is a deterministic local harness; it does not invoke external coding agents.",
+    "Claims are limited to observed behavior deltas, not universal agent improvement."
   ];
-
+  const workspaces: string[] = [];
   const scenarios: ProjectMindScenario[] = [];
 
   try {
+    const { initProject } = await import("../../core/init-project.js");
+    const { createMemory } = await import("../../core/create-memory.js");
+    const { retrieveMemories } = await import("../../core/retrieve-memories.js");
+    const { preflightCommand } = await import("../../core/preflight-command.js");
+    const { quarantineMemory } = await import("../../safety/quarantine.js");
+
     // Scenario 1: package-manager-policy
-    const noMemory1 = await preflightCommand({ cwd, command: "npm install lodash" });
-    const mem1 = await createMemory({
-      cwd,
-      content: "Do not run npm install. Use pnpm install instead.",
-      type: "command_policy",
-      source: "user_explicit",
-      metadata: {
-        commandPattern: "npm install",
-        matchType: "substring",
-        decision: "block",
-        suggestedAction: "Use pnpm install"
-      }
-    });
-    const withMemory1 = await preflightCommand({ cwd, command: "npm install lodash" });
-    scenarios.push({
-      name: "package-manager-policy",
-      passed: noMemory1.decision !== "block" && withMemory1.decision === "block" && withMemory1.matchedMemoryIds.length > 0,
-      noMemory: { decision: noMemory1.decision },
-      withMemory: { decision: withMemory1.decision, matchedMemoryIds: withMemory1.matchedMemoryIds },
-      delta: withMemory1.decision !== noMemory1.decision ? "memory changed preflight decision from warn/allow to block" : "no delta"
-    });
+    {
+      const noMemoryCwd = await tempWorkspace("pm-no-mem-");
+      workspaces.push(noMemoryCwd);
+      await initProject({ cwd: noMemoryCwd });
+      const withMemoryCwd = await tempWorkspace("pm-with-mem-");
+      workspaces.push(withMemoryCwd);
+      await initProject({ cwd: withMemoryCwd });
+      await createMemory({
+        cwd: withMemoryCwd,
+        content: "Do not run npm install. Use pnpm install instead.",
+        type: "command_policy",
+        source: "user_explicit",
+        metadata: {
+          commandPattern: "npm install",
+          matchType: "substring",
+          decision: "block",
+          suggestedAction: "Use pnpm install"
+        }
+      });
+
+      const noMem = await preflightCommand({ cwd: noMemoryCwd, command: "npm install lodash" });
+      const withMem = await preflightCommand({ cwd: withMemoryCwd, command: "npm install lodash" });
+
+      scenarios.push({
+        name: "package-manager-policy",
+        passed: noMem.decision !== "block" && withMem.decision === "block" && withMem.matchedMemoryIds.length > 0,
+        noMemory: { decision: noMem.decision },
+        withMemory: { decision: withMem.decision, matchedMemoryIds: withMem.matchedMemoryIds },
+        delta: withMem.decision !== noMem.decision ? "memory changed preflight decision from allow/warn to block" : "no delta"
+      });
+    }
 
     // Scenario 2: fragile-file
-    await createMemory({
-      cwd,
-      content: "src/router.ts is fragile — editing it requires running full regression suite.",
-      type: "fragile_file",
-      source: "user_explicit",
-      paths: ["src/router.ts"],
-      severity: "high"
-    });
-    const noMemory2 = await retrieveMemories({ cwd, task: "edit a CSS file", dryRun: true });
-    const withMemory2 = await retrieveMemories({ cwd, task: "add a route to src/router.ts", dryRun: true });
-    const hasFragile = withMemory2.some((m) => m.type === "fragile_file" && m.paths.includes("src/router.ts"));
-    scenarios.push({
-      name: "fragile-file",
-      passed: !noMemory2.some((m) => m.type === "fragile_file") && hasFragile,
-      noMemory: { memoryCount: noMemory2.length },
-      withMemory: { memoryCount: withMemory2.length, includesFragileFile: hasFragile },
-      delta: hasFragile ? "fragile file surfaced when relevant task references file" : "no delta"
-    });
+    {
+      const noMemoryCwd = await tempWorkspace("ff-no-mem-");
+      workspaces.push(noMemoryCwd);
+      await initProject({ cwd: noMemoryCwd });
+      const withMemoryCwd = await tempWorkspace("ff-with-mem-");
+      workspaces.push(withMemoryCwd);
+      await initProject({ cwd: withMemoryCwd });
+      await createMemory({
+        cwd: withMemoryCwd,
+        content: "src/router.ts is fragile — editing it requires running full regression suite.",
+        type: "fragile_file",
+        source: "user_explicit",
+        paths: ["src/router.ts"],
+        severity: "high"
+      });
+
+      const noMem = await retrieveMemories({ cwd: noMemoryCwd, task: "edit a CSS file", dryRun: true });
+      const withMem = await retrieveMemories({ cwd: withMemoryCwd, task: "add a route to src/router.ts", dryRun: true });
+      const hasFragile = withMem.some((m) => m.type === "fragile_file" && m.paths.includes("src/router.ts"));
+
+      scenarios.push({
+        name: "fragile-file",
+        passed: !noMem.some((m) => m.type === "fragile_file") && hasFragile,
+        noMemory: { memoryCount: noMem.length },
+        withMemory: { memoryCount: withMem.length, includesFragileFile: hasFragile },
+        delta: hasFragile ? "fragile file surfaced when task references file" : "no delta"
+      });
+    }
 
     // Scenario 3: failed-approach
-    await createMemory({
-      cwd,
-      content: "Do not fix auth by editing middleware directly. Use the token refresh utility.",
-      type: "failed_attempt",
-      source: "user_explicit",
-      severity: "high"
-    });
-    const noMemory3 = await retrieveMemories({ cwd, task: "update README", dryRun: true });
-    const withMemory3 = await retrieveMemories({ cwd, task: "fix auth session refresh bug", dryRun: true });
-    const hasFailed = withMemory3.some((m) => m.type === "failed_attempt");
-    scenarios.push({
-      name: "failed-approach",
-      passed: !noMemory3.some((m) => m.type === "failed_attempt") && hasFailed,
-      noMemory: { memoryCount: noMemory3.length },
-      withMemory: { memoryCount: withMemory3.length, includesFailedAttempt: hasFailed },
-      delta: hasFailed ? "failed attempt surfaced for similar task" : "no delta"
-    });
+    {
+      const noMemoryCwd = await tempWorkspace("fa-no-mem-");
+      workspaces.push(noMemoryCwd);
+      await initProject({ cwd: noMemoryCwd });
+      const withMemoryCwd = await tempWorkspace("fa-with-mem-");
+      workspaces.push(withMemoryCwd);
+      await initProject({ cwd: withMemoryCwd });
+      await createMemory({
+        cwd: withMemoryCwd,
+        content: "Do not fix auth by editing middleware directly. Use the token refresh utility.",
+        type: "failed_attempt",
+        source: "user_explicit",
+        severity: "high"
+      });
+
+      const noMem = await retrieveMemories({ cwd: noMemoryCwd, task: "update README", dryRun: true });
+      const withMem = await retrieveMemories({ cwd: withMemoryCwd, task: "fix auth session refresh bug", dryRun: true });
+      const hasFailed = withMem.some((m) => m.type === "failed_attempt");
+
+      scenarios.push({
+        name: "failed-approach",
+        passed: !noMem.some((m) => m.type === "failed_attempt") && hasFailed,
+        noMemory: { memoryCount: noMem.length },
+        withMemory: { memoryCount: withMem.length, includesFailedAttempt: hasFailed },
+        delta: hasFailed ? "failed attempt surfaced for similar task" : "no delta"
+      });
+    }
 
     // Scenario 4: unsafe-exclusion
-    const mem4 = await createMemory({
-      cwd,
-      content: "API key sk-test12345 should not appear in retrieval after quarantine",
-      type: "decision",
-      source: "user_explicit"
-    });
-    await quarantineMemory({ cwd, memoryId: mem4.id, reason: "Contains test secret" });
-    const results4 = await retrieveMemories({ cwd, task: "API key", dryRun: true });
-    const isQuarantined4 = !results4.some((m) => m.id === mem4.id);
-    scenarios.push({
-      name: "unsafe-exclusion",
-      passed: isQuarantined4,
-      noMemory: {},
-      withMemory: { retrievedCount: results4.length, memoryExcluded: isQuarantined4 },
-      delta: "quarantined memory excluded from retrieval"
-    });
+    {
+      const cwd = await tempWorkspace("ue-mem-");
+      workspaces.push(cwd);
+      await initProject({ cwd });
+      const mem = await createMemory({
+        cwd,
+        content: "API key test value that should be quarantined.",
+        type: "decision",
+        source: "user_explicit"
+      });
+      await quarantineMemory({ cwd, memoryId: mem.id, reason: "Contains test secret" });
+      const results = await retrieveMemories({ cwd, task: "API key", dryRun: true });
+      const excluded = !results.some((m) => m.id === mem.id);
+
+      scenarios.push({
+        name: "unsafe-exclusion",
+        passed: excluded,
+        noMemory: {},
+        withMemory: { retrievedCount: results.length, memoryExcluded: excluded },
+        delta: "quarantined memory excluded from retrieval"
+      });
+    }
 
     const passed = scenarios.filter((s) => s.passed).length;
     const failed = scenarios.filter((s) => !s.passed).length;
+
+    await cleanup(workspaces);
 
     return {
       name: "projectmind-causal-proof",
@@ -124,6 +172,7 @@ export async function runProjectMindEval(): Promise<ProjectMindResult> {
       limitations
     };
   } catch (error) {
+    await cleanup(workspaces);
     const message = error instanceof Error ? error.message : String(error);
     return {
       name: "projectmind-causal-proof",

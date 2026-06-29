@@ -37,6 +37,8 @@ jobs:
         run: |
           node dist/cli/main.js eval --json
           pnpm cli eval live --json
+      - name: ProjectMind causal proof
+        run: pnpm cli eval projectmind --json
       - name: Protocol benchmarks
         run: pnpm cli benchmark run --all --json
       - name: Git whitespace check
