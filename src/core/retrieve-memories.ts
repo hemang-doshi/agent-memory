@@ -433,7 +433,7 @@ export async function retrieveMemories(input: RetrieveMemoriesInput): Promise<Me
   const loaded = await loadProject(input.cwd);
 
   try {
-    const mode = input.mode ?? "deterministic";
+    const mode = input.mode ?? loaded.context.config.retrieval.default_mode;
     const files = input.files ?? [];
     const queryTokens = tokenize(`${input.task} ${input.command ?? ""}`);
     const now = Date.now();

@@ -35,7 +35,8 @@ describe("candidate promotion into future packs", () => {
 
     const approved = await approveCandidate({
       cwd,
-      candidateId: candidate.candidateId
+      candidateId: candidate.candidateId,
+      reason: "test review"
     });
     expect(approved.memory.status).toBe("active");
 

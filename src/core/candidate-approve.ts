@@ -19,10 +19,12 @@ function requireProposedCandidate(candidate: MemoryCandidateRecord): void {
 
 export async function approveCandidate({
   cwd,
-  candidateId
+  candidateId,
+  reason
 }: {
   cwd: string;
   candidateId: string;
+  reason?: string;
 }): Promise<CandidateApprovalResult> {
   const loaded = await loadProject(cwd);
 
@@ -35,6 +37,11 @@ export async function approveCandidate({
     requireProposedCandidate(existing);
     assertNoObviousSecret(existing.content);
     assertNoObviousSecret(existing.evidence);
+
+    const reviewReason = (reason ?? "").trim();
+    if (!reviewReason) {
+      throw new Error("candidate approve requires --reason");
+    }
 
     const now = new Date().toISOString();
     const candidatePaths: string[] =
@@ -79,6 +86,7 @@ export async function approveCandidate({
         evidence: existing.evidence,
         evidenceEventIds: existing.evidenceEventIds,
         approvedFromCandidate: true,
+        approvalReason: reviewReason,
         ...(existing.metadata ?? {})
       }
     };
@@ -89,6 +97,7 @@ export async function approveCandidate({
       ...existing,
       candidateStatus: "approved",
       reviewedAt: now,
+      reviewReason,
       targetMemoryId: memory.id
     };
 
@@ -102,6 +111,7 @@ export async function approveCandidate({
         payload: {
           candidateId: candidate.candidateId,
           decision: "approved",
+          reason: reviewReason,
           targetMemoryId: memory.id
         }
       }

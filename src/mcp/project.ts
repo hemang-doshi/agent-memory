@@ -63,12 +63,24 @@ export function loadReadOnlyProject(cwd: string): LoadedReadOnlyProject {
 
   try {
     const repo = new AgentMemoryRepository(db);
-    const fallbackProjectRow = db
-      .prepare("SELECT * FROM projects ORDER BY created_at DESC LIMIT 1")
-      .get() as Record<string, unknown> | undefined;
-    const project =
-      repo.getProjectByRoot(initialized.root) ??
-      (fallbackProjectRow ? mapProjectRow(fallbackProjectRow) : null);
+
+    let project = config.project_id
+      ? repo.getProjectById(config.project_id) ?? null
+      : null;
+
+    if (!project) {
+      project = repo.getProjectByRoot(initialized.root);
+    }
+
+    if (!project) {
+      const allRows = db
+        .prepare("SELECT * FROM projects ORDER BY created_at ASC")
+        .all() as Record<string, unknown>[];
+      if (allRows.length === 1) {
+        project = mapProjectRow(allRows[0]!);
+      }
+    }
+
     if (!project) {
       throw new McpRequestError("not_initialized", NOT_INITIALIZED_MESSAGE);
     }
@@ -144,6 +156,16 @@ export function explainReadOnly(
   if (!memory || memory.projectId !== loaded.project.projectId) {
     throw new McpRequestError("invalid_request", `Memory not found: ${memoryId}`);
   }
+
+  const visible = selectAgentVisibleMemories({
+    memories: [memory],
+    config: loaded.config
+  });
+
+  if (visible.length === 0) {
+    throw new McpRequestError("invalid_request", `Memory not found: ${memoryId}`);
+  }
+
   return {
     memory,
     relatedEvents: loaded.repo.listEvents(loaded.project.projectId, memoryId)

@@ -73,7 +73,8 @@ describe("candidate evidence events", () => {
 
     const approved = await approveCandidate({
       cwd,
-      candidateId: candidate.candidateId
+      candidateId: candidate.candidateId,
+      reason: "test review"
     });
 
     expect(approved.memory.metadata).toMatchObject({

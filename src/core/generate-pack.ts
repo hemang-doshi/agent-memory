@@ -9,13 +9,21 @@ export async function generatePack({
   task,
   sessionId,
   files,
-  command
+  command,
+  maxResults,
+  mode,
+  rerank,
+  reranker
 }: {
   cwd: string;
   task: string;
   sessionId?: string;
   files?: string[];
   command?: string;
+  maxResults?: number;
+  mode?: import("../domain/types.js").RetrievalMode;
+  rerank?: boolean;
+  reranker?: import("../domain/types.js").RerankerMode;
 }): Promise<{
   schemaVersion: "agent-memory.packet.v1";
   project: string;
@@ -40,7 +48,10 @@ export async function generatePack({
       task,
       files,
       command,
-      maxResults: loaded.context.config.retrieval.max_results
+      maxResults: maxResults ?? loaded.context.config.retrieval.max_results,
+      mode: mode ?? loaded.context.config.retrieval.default_mode,
+      rerank,
+      reranker
     });
     const matchedMemoryIds = memories.map((memory) => memory.id);
     loaded.repo.markMemoriesInjected(matchedMemoryIds);

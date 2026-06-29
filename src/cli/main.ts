@@ -36,6 +36,7 @@ import { proposeCandidate } from "../core/candidate-propose.js";
 import { uninstallInstructions } from "../core/uninstall-instructions.js";
 import { updateMemory } from "../core/update-memory.js";
 import { runLiveAgentEval } from "../evals/live/live-agent.js";
+import { runProjectMindEval } from "../evals/projectmind/projectmind.js";
 import {
   dedupeMemories,
   dedupeResolve,
@@ -247,7 +248,7 @@ function helpText(): string {
     "  agentmem session receipt --session <session-id> [--json]",
     "  agentmem add <content> --type <type> [--source <source>] [--path <path>] [--tags a,b] [--pinned] [--priority n]",
     "  agentmem remember <content> --type <type> [--source <source>] [--path <path>] [--tags a,b] [--pinned] [--priority n]",
-    "  agentmem protocol start \"<task>\" [--json]",
+    "  agentmem protocol start \"<task>\" [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--limit n] [--json]",
     "  agentmem protocol check --session <session-id> [--json]",
     "  agentmem dogfood report --session <session-id> [--json]",
     "  agentmem event record --session <session-id> --type <type> --summary \"...\" [--command \"...\"] [--exit-code 1] [--json]",
@@ -258,8 +259,8 @@ function helpText(): string {
     "  agentmem index [--rebuild|--vector] [--json]",
     "  agentmem retrieve <task> [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--explain] [--dry-run] [--file <path>] [--command <command>] [--limit n] [--json]",
     "  agentmem explain-retrieval <task> [--mode deterministic|keyword|hybrid|vector] [--rerank] [--json]",
-    "  agentmem inject <task> [--session <session-id>] [--file <path>] [--command <command>] [--json|--format markdown]",
-    "  agentmem pack <task> [--session <session-id>] [--file <path>] [--command <command>] [--json]",
+    "  agentmem inject <task> [--session <session-id>] [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--limit n] [--file <path>] [--command <command>] [--json|--format markdown]",
+    "  agentmem pack <task> [--session <session-id>] [--mode deterministic|keyword|hybrid|vector] [--rerank] [--reranker none|noop|mock] [--limit n] [--file <path>] [--command <command>] [--json]",
     "  agentmem preflight --command <command> [--session <session-id>] [--enforce] [--json]",
     "  agentmem run --session <session-id> [--allow-warn] -- <command>",
     "  agentmem eval [--json]",
@@ -267,7 +268,7 @@ function helpText(): string {
     "  agentmem mcp serve [--json]",
     "  agentmem candidate propose --session <session-id> --type <type> --content \"...\" [--evidence \"...\"] [--evidence-event <event-id>] [--json]",
     "  agentmem candidate list [--status proposed] [--json]",
-    "  agentmem candidate approve <candidate-id> [--json]",
+    "  agentmem candidate approve <candidate-id> --reason \"...\" [--json]",
     "  agentmem candidate reject <candidate-id> --reason \"...\" [--json]",
     "  agentmem manage --plan [--json]",
     "  agentmem benchmark run --fixture <path> [--json]",
@@ -555,7 +556,14 @@ async function main(): Promise<void> {
           throw new Error("protocol start requires a task description");
         }
 
-        const result = await startProtocol({ cwd, task });
+        const result = await startProtocol({
+          cwd,
+          task,
+          mode: parseRetrievalMode(parsed.options.mode),
+          rerank: Boolean(parsed.options.rerank),
+          reranker: parseRerankerMode(parsed.options.reranker),
+          maxResults: parseIntegerOption(parsed, "limit")
+        });
         render(asJson ? result : formatProtocolStart(result), asJson);
         return;
       }
@@ -672,7 +680,11 @@ async function main(): Promise<void> {
           throw new Error("candidate approve requires a candidate id");
         }
 
-        const result = await approveCandidate({ cwd, candidateId });
+        const result = await approveCandidate({
+        cwd,
+        candidateId,
+        reason: requireOption(parsed, "reason")
+      });
         render(
           asJson
             ? {
@@ -767,7 +779,11 @@ async function main(): Promise<void> {
         task,
         files: parseStringList(parsed, "files") ?? parseStringList(parsed, "file"),
         command: typeof parsed.options.command === "string" ? parsed.options.command : undefined,
-        sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined
+        sessionId: typeof parsed.options.session === "string" ? parsed.options.session : undefined,
+        maxResults: parseIntegerOption(parsed, "limit"),
+        mode: parseRetrievalMode(parsed.options.mode),
+        rerank: Boolean(parsed.options.rerank),
+        reranker: parseRerankerMode(parsed.options.reranker)
       });
       render(asJson ? result : result.markdown, asJson);
       return;
@@ -1161,6 +1177,23 @@ async function main(): Promise<void> {
             : [
                 `${result.name}: ${result.passed ? "pass" : "fail"}`,
                 ...result.scenarios.map((item) => `- ${item.passed ? "pass" : "fail"}: ${item.name}`)
+              ].join("\n"),
+          asJson
+        );
+        if (!result.passed) {
+          process.exitCode = 1;
+        }
+        return;
+      }
+      if (parsed.positionals[0] === "projectmind") {
+        const result = await runProjectMindEval();
+        render(
+          asJson
+            ? result
+            : [
+                `${result.name}: ${result.passed ? "pass" : "fail"}`,
+                ` passed: ${result.summary.passed}, failed: ${result.summary.failed}`,
+                ...result.scenarios.map((item) => `- ${item.passed ? "pass" : "fail"}: ${item.name} — ${item.delta}`)
               ].join("\n"),
           asJson
         );

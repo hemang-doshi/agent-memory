@@ -40,6 +40,13 @@ function parseRetrievalMode(value: unknown): RetrievalMode {
   throw new Error(`Invalid retrieval.default_mode: ${String(value)}. Expected one of: deterministic, keyword, hybrid, vector`);
 }
 
+function parseBoolean(value: unknown, field: string): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`Invalid ${field}: expected boolean.`);
+}
+
 export interface ProjectContext {
   cwd: string;
   gitRoot: string;
@@ -211,7 +218,7 @@ export function loadConfig(configPath: string): ProjectConfig {
       enabled:
         (rawPreflight as Partial<ProjectConfig["preflight"]>).enabled === undefined
           ? DEFAULT_PROJECT_CONFIG.preflight.enabled
-          : Boolean((rawPreflight as Partial<ProjectConfig["preflight"]>).enabled),
+          : parseBoolean((rawPreflight as Partial<ProjectConfig["preflight"]>).enabled, "preflight.enabled"),
       default_decision:
         (rawPreflight as Partial<ProjectConfig["preflight"]>).default_decision === undefined
           ? DEFAULT_PROJECT_CONFIG.preflight.default_decision
@@ -239,7 +246,7 @@ export function loadConfig(configPath: string): ProjectConfig {
       enabled:
         (rawVector as Partial<ProjectConfig["vector"]>).enabled === undefined
           ? DEFAULT_PROJECT_CONFIG.vector.enabled
-          : Boolean((rawVector as Partial<ProjectConfig["vector"]>).enabled),
+          : parseBoolean((rawVector as Partial<ProjectConfig["vector"]>).enabled, "vector.enabled"),
       provider:
         (rawVector as Partial<ProjectConfig["vector"]>).provider === undefined
           ? DEFAULT_PROJECT_CONFIG.vector.provider
@@ -249,7 +256,7 @@ export function loadConfig(configPath: string): ProjectConfig {
       enabled:
         (rawRerank as Partial<ProjectConfig["rerank"]>).enabled === undefined
           ? DEFAULT_PROJECT_CONFIG.rerank.enabled
-          : Boolean((rawRerank as Partial<ProjectConfig["rerank"]>).enabled),
+          : parseBoolean((rawRerank as Partial<ProjectConfig["rerank"]>).enabled, "rerank.enabled"),
       provider:
         (rawRerank as Partial<ProjectConfig["rerank"]>).provider === undefined
           ? DEFAULT_PROJECT_CONFIG.rerank.provider
@@ -263,11 +270,11 @@ export function loadConfig(configPath: string): ProjectConfig {
       write_tools_enabled:
         (rawMcp as Partial<ProjectConfig["mcp"]>).write_tools_enabled === undefined
           ? DEFAULT_PROJECT_CONFIG.mcp.write_tools_enabled
-          : Boolean((rawMcp as Partial<ProjectConfig["mcp"]>).write_tools_enabled),
+          : parseBoolean((rawMcp as Partial<ProjectConfig["mcp"]>).write_tools_enabled, "mcp.write_tools_enabled"),
       candidate_approval_enabled:
         (rawMcp as Partial<ProjectConfig["mcp"]>).candidate_approval_enabled === undefined
           ? DEFAULT_PROJECT_CONFIG.mcp.candidate_approval_enabled
-          : Boolean((rawMcp as Partial<ProjectConfig["mcp"]>).candidate_approval_enabled)
+          : parseBoolean((rawMcp as Partial<ProjectConfig["mcp"]>).candidate_approval_enabled, "mcp.candidate_approval_enabled")
     }
   };
 
